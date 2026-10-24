@@ -126,4 +126,5 @@ def main(argv=None):
 
     import uvicorn
     print(f"Clutch running with {args.source} source -> http://{args.host}:{args.port}")
-    uvicorn.run(create_app(engine), host=args.host, port=args.port, log_level="warning")
+    # Open browser tabs keep WebSockets alive: without a timeout, Ctrl-C would wait for them forever.
+    uvicorn.run(create_app(engine), host=args.host, port=args.port, log_level="warning", timeout_graceful_shutdown=3)
