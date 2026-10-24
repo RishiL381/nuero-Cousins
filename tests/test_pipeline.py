@@ -33,9 +33,19 @@ def test_heart_rate_on_clean_pulse():
     assert abs(hr["bpm"] - 75) < 3 and hr["quality"] > 0.8, hr
 
 
-def simulate(phases):
+def fake_face(stress, rng):
+    """Face features that follow the simulated stress like a real face might (with noise)."""
+    n = lambda sd: rng.normal(0, sd)
+    return {"face_brow": 0.10 + 0.30 * stress + n(0.04), "face_press": 0.05 + 0.20 * stress + n(0.04),
+            "face_squint": 0.20 + n(0.05),                      # does not react: must be left out
+            "face_smile": 0.30 - 0.20 * stress + n(0.04),       # learned direction: goes DOWN with stress
+            "blink_rate": 15 + n(3), "head_motion": 0.01 + 0.02 * stress + n(0.004)}
+
+
+def simulate(phases, with_face=False):
     src = MockSource(seed=3)
     src.start()
+    rng = np.random.default_rng(5)
     with tempfile.TemporaryDirectory() as tmp:
         eng = Engine(src, Config(), Path(tmp))
         out = {}
@@ -44,6 +54,8 @@ def simulate(phases):
             rows = []
             for _ in range(int(seconds / 0.5)):
                 src.step(0.5)
+                if with_face:
+                    eng.set_face(fake_face(src.stress, rng))
                 eng._tick(src, eng.cfg)
                 rows.append(eng.latest)
             out[phase] = rows
@@ -80,7 +92,26 @@ def test_rest_only_calibration_is_flagged_low_confidence():
     assert cal["mode"] == "rest_only" and cal["confidence"] == "low" and cal["used"] == [], cal
 
 
+def test_headset_free_score_from_face_and_heart():
+    out, eng = simulate([("calib_rest", 60), ("calib_stress", 60), ("calibration_check", 1),
+                         ("round1", 60), ("reset", 60)], with_face=True)
+    cal = eng.model.calibration
+    print("used:", cal["used"], "| without headset:", cal["used_without_headset"])
+    print("face smile direction learned:", cal["signals"]["face_smile"].get("direction"))
+    assert {"face_brow", "face_press", "face_smile", "hr"} <= set(cal["used_without_headset"]), cal["used"]
+    assert "face_squint" not in cal["used"] and "eeg" not in cal["used_without_headset"]
+    assert cal["signals"]["face_smile"]["direction"] == -1
+
+    def late(phase, key):
+        return float(np.mean([m[key] for m in out[phase][-60:] if m[key] is not None]))
+    b1, bs = late("round1", "stress_body"), late("reset", "stress_body")
+    f1, fs = late("round1", "stress"), late("reset", "stress")
+    print(f"with EEG: round1={f1:.0f} reset={fs:.0f} | without headset: round1={b1:.0f} reset={bs:.0f}")
+    assert b1 > 60 and bs < 25
+
+
 if __name__ == "__main__":
+    test_headset_free_score_from_face_and_heart()
     test_rest_only_calibration_is_flagged_low_confidence()
     test_alpha_feature_tracks_relaxation()
     test_heart_rate_on_clean_pulse()

@@ -26,6 +26,13 @@ const STRESS_BINS = [
   { key: "high", label: "High stress", range: "65+", lo: 65, hi: Infinity },
 ];
 const SIGNAL_NAMES = { eeg: "Brain", hr: "Heart" };
+const FACE_LABELS = {
+  face_brow: "Brows lowered", face_press: "Lips pressed", face_squint: "Eyes squinted", face_frown: "Frown",
+  face_smile: "Smile", blink_rate: "Blinks / min", head_motion: "Head motion",
+};
+const FACE_KEYS = Object.keys(FACE_LABELS);
+const isFaceKey = (k) => FACE_KEYS.includes(k);
+const SIGNAL_GROUPS = { Brain: ["eeg"], Heart: ["hr"], Face: FACE_KEYS };
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -184,14 +191,20 @@ function updateLive(m, hr) {
 
   // Which signals are feeding the score right now
   const cal = state.baseline;
-  $("signal-chips").innerHTML = !m.calibrated || !cal ? "" : Object.entries(SIGNAL_NAMES).map(([k, label]) => {
-    const used = cal.mode === "anchored" ? cal.used.includes(k) : cal.signals[k] && cal.signals[k].rest != null;
-    const live = (m.used || []).includes(k);
+  $("signal-chips").innerHTML = !m.calibrated || !cal ? "" : Object.entries(SIGNAL_GROUPS).map(([label, keys]) => {
+    const inGroup = (k) => keys.includes(k) || (keys === FACE_KEYS && isFaceKey(k));
+    const used = cal.mode === "anchored" ? cal.used.some(inGroup)
+      : Object.entries(cal.signals).some(([k, s]) => inGroup(k) && s.rest != null);
+    const live = (m.used || []).some(inGroup);
     const cls = !used ? "off" : live ? "on" : "wait";
-    const tip = !used ? `${label}: not used (${cal.signals[k] ? cal.signals[k].note : "no data"} during calibration)`
+    const tip = !used ? `${label}: not used (no clear response during calibration)`
       : live ? `${label}: feeding the score now` : `${label}: used, but no clean signal right now`;
     return `<span class="chip ${cls}" title="${tip}">${label} ${!used ? "✗" : live ? "✓" : "…"}</span>`;
   }).join("");
+  document.querySelectorAll('[data-live="stress-body"]').forEach((el) => {
+    const b = m.stress_body == null ? null : Math.round(m.stress_body);
+    el.textContent = b ?? "—"; el.style.color = stressColor(b);
+  });
 
   $("calib-note").hidden = !!m.calibrated;
   const err = $("engine-error");
@@ -797,9 +810,28 @@ function renderCalibrationReport(cal, extra) {
       <div class="vals">${s1.score} → ${s2.score}</div><div class="muted small">${d >= 0 ? "+" : ""}${d} points</div>
       <p class="verdict ${d >= 5 ? "used" : "unused"}">${felt}</p></div>`;
   }
+  // Face card: every webcam indicator, its change and whether it was kept
+  const faceRows = FACE_KEYS.filter((k) => sig[k]).map((k) => {
+    const s = sig[k], used = cal && cal.used.includes(k);
+    const fmt = (v) => (k === "blink_rate" ? v.toFixed(0) : k === "head_motion" ? v.toFixed(3) : v.toFixed(2));
+    const vals = s.rest != null && s.stress != null ? `${fmt(s.rest)} → ${fmt(s.stress)}` : "—";
+    return `<tr><td>${FACE_LABELS[k]}</td><td>${vals}</td><td>${s.effect != null ? s.effect.toFixed(2) : "—"}</td>
+      <td class="${used ? "better" : "worse"}">${used ? "✓" : "✗"}</td></tr>`;
+  }).join("");
+  const faceCard = faceRows
+    ? `<div class="sig-card"><h3>Face · webcam</h3><div class="muted small">baseline → stress test, Cohen's d</div>
+        <table class="mini">${faceRows}</table></div>`
+    : `<div class="sig-card"><h3>Face · webcam</h3><p class="muted small">Not recorded. Start the camera before calibrating
+        to get the "without headset" score.</p></div>`;
+  const noHeadset = cal && cal.ok ? (cal.used_without_headset || []) : [];
+  const bodyCard = `<div class="sig-card"><h3>Without headset</h3><div class="muted small">signals usable with a watch + webcam</div>
+    <div class="vals">${noHeadset.length ? noHeadset.length : "None"}</div>
+    <p class="verdict ${noHeadset.length ? "used" : "unused"}">${noHeadset.length
+      ? "✓ " + noHeadset.map((k) => SIGNAL_NAMES[k] || FACE_LABELS[k]).join(", ")
+      : "✗ Only the EEG reacted: the headset-free score is not available yet"}</p></div>`;
   $("report-signals").innerHTML =
     card("eeg", "Brain · alpha/beta ratio", (v) => Math.pow(10, v).toFixed(2), "") +
-    card("hr", "Heart rate", (v) => Math.round(v), " bpm") + selfCard;
+    card("hr", "Heart rate", (v) => Math.round(v), " bpm") + faceCard + bodyCard + selfCard;
 
   let lead, summary;
   if (!cal || !cal.ok) {
@@ -1060,6 +1092,37 @@ state.scenes.preview = new BoatScene($("sea-preview"));
 state.scenes.preview.start();
 
 $("btn-start").onclick = () => runSession();
+// Face camera (MediaPipe runs in face.js; only the numbers are sent to the server)
+function renderFaceBars(f) {
+  $("face-bars").innerHTML = FACE_KEYS.map((k) => {
+    const v = f ? f[k] : null;
+    const pct = v == null ? 0 : k === "blink_rate" ? Math.min(100, (v / 40) * 100)
+      : k === "head_motion" ? Math.min(100, (v / 0.3) * 100) : Math.min(100, v * 100);
+    const txt = v == null ? "—" : k === "blink_rate" ? v.toFixed(0) : k === "head_motion" ? v.toFixed(2) : Math.round(v * 100);
+    return `<div class="face-bar"><span>${FACE_LABELS[k]}</span><div class="track"><div class="fill" style="width:${pct}%"></div></div><b>${txt}</b></div>`;
+  }).join("");
+}
+renderFaceBars(null);
+$("cam-toggle").onclick = async () => {
+  if (!window.ClutchFace) { $("cam-status").textContent = "Face module still loading, try again in a second…"; return; }
+  if (ClutchFace.isRunning()) {
+    ClutchFace.stop();
+    $("cam-toggle").textContent = "Start camera"; $("cam-off").hidden = false;
+    $("cam-status").textContent = "Camera off"; renderFaceBars(null);
+    return;
+  }
+  $("cam-toggle").disabled = true;
+  try {
+    await ClutchFace.start($("cam-video"), $("cam-overlay"),
+      (f) => { if (f) send({ type: "face", features: f }); renderFaceBars(f); },
+      (s) => { $("cam-status").textContent = s; });
+    $("cam-off").hidden = true; $("cam-toggle").textContent = "Stop camera";
+  } catch (e) {
+    $("cam-status").textContent = `Camera error: ${e.message || e}`;
+  }
+  $("cam-toggle").disabled = false;
+};
+
 $("hs-connect").onclick = () => send({ type: "headset_connect", name: $("hs-name").value.trim() });
 $("hs-disconnect").onclick = () => send({ type: "headset_disconnect" });
 $("hs-name").onkeydown = (e) => { if (e.key === "Enter") $("hs-connect").click(); };

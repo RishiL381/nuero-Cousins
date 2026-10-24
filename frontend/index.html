@@ -66,8 +66,23 @@
           <h2>Live stress</h2>
           <div class="gauge" data-size="lg"></div>
           <div class="chips" id="signal-chips"></div>
+          <p class="body-score">Without headset (heart + face): <b data-live="stress-body">—</b></p>
           <p class="muted small" id="calib-note">Calibrate to see your stress score.</p>
           <canvas id="chart-setup" class="chart" aria-label="Signal over the last two minutes"></canvas>
+        </div>
+
+        <div class="card">
+          <h2>Face (webcam)</h2>
+          <div class="cam">
+            <video id="cam-video" playsinline muted></video>
+            <canvas id="cam-overlay"></canvas>
+            <div class="cam-off" id="cam-off">Camera off</div>
+          </div>
+          <p class="hs-status small" id="cam-status">Runs on this computer only: no image is sent or saved.</p>
+          <div class="face-bars" id="face-bars"></div>
+          <div class="row"><button id="cam-toggle" class="primary">Start camera</button></div>
+          <p class="hint">Start it before calibrating: the face indicators are then calibrated with your heart and brain,
+            which gives the "without headset" score.</p>
         </div>
 
         <div class="card">
@@ -266,5 +281,6 @@
   <footer class="muted">Esc: abort session · S: show/hide live stress · D: debug panel · Wellness prototype, not a medical device.</footer>
   <script src="widget.js"></script>
   <script src="app.js"></script>
+  <script type="module" src="face.js"></script>
 </body>
 </html>

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,6 +21,9 @@ from .engine import Config, Engine
 from .sources import MUSE_BOARDS, LslSource, MockSource, MuseSource
 
 ROOT = Path(__file__).resolve().parent.parent
+# MediaPipe (frontend/vendor) needs these exact types; Windows' registry can map them wrongly.
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("application/wasm", ".wasm")
 
 
 def create_app(engine: Engine) -> FastAPI:
@@ -79,6 +83,8 @@ def create_app(engine: Engine) -> FastAPI:
                     engine.logger.event(engine.now(), engine.phase, msg.get("name", "event"), msg.get("data", {}))
                 elif kind == "session_end":
                     engine.logger.finish(msg.get("summary", {}))
+                elif kind == "face":
+                    engine.set_face(msg.get("features") or {})
                 elif kind == "headset_connect" and hasattr(src, "headset"):
                     src.headset.connect(msg.get("name"))
                 elif kind == "headset_disconnect" and hasattr(src, "headset"):

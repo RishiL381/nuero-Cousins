@@ -36,8 +36,19 @@ import numpy as np
 from .processing import eeg_features, heart_rate, motion_level
 
 CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose data are collected
-# Expected direction under stress: EEG calm ratio goes down (-1), heart rate goes up (+1).
-SIGNALS = {"eeg": -1, "hr": +1}
+# Expected direction under stress: +1 goes up, -1 goes down, 0 = learned per person from the calibration.
+#   eeg          log10(alpha/beta), down with stress (alpha suppression, Vanhollebeke et al., 2022)
+#   hr           heart rate in bpm (Muse PPG now, a Garmin watch later), up with stress
+#   face_*       MediaPipe blendshape means (0-1): brows lowered, lips pressed, eyes squinted, frown, smile
+#   blink_rate   blinks per minute, head_motion: head movement (face widths per second)
+SIGNALS = {
+    "eeg": -1, "hr": +1,
+    "face_brow": +1, "face_press": +1, "face_squint": +1, "face_frown": +1, "face_smile": 0,
+    "blink_rate": 0, "head_motion": +1,
+}
+HEADSET_SIGNALS = {"eeg"}  # left out of the "without headset" score
+MIN_SD = {"eeg": 0.05, "hr": 2.0, "blink_rate": 2.0, "head_motion": 0.005}  # floors on spreads
+MIN_SD_FACE = 0.02
 
 
 @dataclass
@@ -47,45 +58,53 @@ class Config:
     motion_window_s: float = 2.0
     tick_s: float = 0.5
     smooth_tau_s: float = 5.0
-    min_sd = {"eeg": 0.05, "hr": 2.0}  # floor on spreads (log10 units, bpm)
     min_effect: float = 0.5            # Cohen's d needed to use a signal (medium effect, Cohen 1988)
     min_hr_quality: float = 0.5
+    face_max_age_s: float = 2.0        # face features older than this are ignored
     notch_hz: float = 60.0             # mains frequency: 60 Hz in the US, 50 Hz in Europe
+
+
+def _empty_samples():
+    return {p: {k: [] for k in SIGNALS} for p in CALIB_PHASES}
 
 
 @dataclass
 class StressModel:
     cfg: Config
     calibration: dict | None = None
-    _samples: dict = field(default_factory=lambda: {p: {"eeg": [], "hr": []} for p in CALIB_PHASES})
-    _smoothed: float | None = None
+    _samples: dict = field(default_factory=_empty_samples)
+    _smoothed: dict = field(default_factory=dict)
 
     @property
     def baseline(self):  # kept for callers that only need to know whether we are calibrated
         return self.calibration
 
-    def collect(self, phase, ratio_log, hr_bpm, hr_q):
+    def collect(self, phase, values: dict):
+        """values: signal name -> current value (None or missing = not available this tick)."""
         if phase not in self._samples:
             return
-        if ratio_log is not None:
-            self._samples[phase]["eeg"].append(ratio_log)
-        if hr_bpm is not None and hr_q >= self.cfg.min_hr_quality:
-            self._samples[phase]["hr"].append(hr_bpm)
+        for name, x in values.items():
+            if name in SIGNALS and x is not None:
+                self._samples[phase][name].append(float(x))
 
     def finalize(self) -> dict:
         rest, stress = self._samples["calib_rest"], self._samples["calib_stress"]
         signals = {}
-        for name, direction in SIGNALS.items():
+        for name, expected in SIGNALS.items():
             r, s = rest[name], stress[name]
+            floor = MIN_SD.get(name, MIN_SD_FACE)
             info = {"n_rest": len(r), "n_stress": len(s), "used": False}
             if len(r) >= 10:
                 info["rest"] = float(np.median(r))
-                info["rest_sd"] = max(float(np.std(r)), self.cfg.min_sd[name])
+                info["rest_sd"] = max(float(np.std(r)), floor)
             if len(r) >= 10 and len(s) >= 10:
                 info["stress"] = float(np.median(s))
-                pooled = max(math.sqrt((np.var(r) + np.var(s)) / 2), self.cfg.min_sd[name])
-                info["effect"] = direction * (info["stress"] - info["rest"]) / pooled
-                d = info["effect"]
+                pooled = max(math.sqrt((np.var(r) + np.var(s)) / 2), floor)
+                d_raw = (info["stress"] - info["rest"]) / pooled
+                # learned direction: whichever way it moved for this person
+                info["direction"] = expected if expected != 0 else (1 if d_raw >= 0 else -1)
+                d = info["direction"] * d_raw
+                info["effect"] = d
                 info["used"] = d >= self.cfg.min_effect
                 info["note"] = ("large response" if d >= 0.8 else
                                 "medium response" if d >= 0.5 else
@@ -93,15 +112,17 @@ class StressModel:
                                 "changed the opposite way, not used" if d <= -0.2 else
                                 "no clear change, not used")
                 rec = self._samples["calib_recovery"][name]
-                if len(rec) >= 10:  # how far back toward calm the user came after the stressor
+                if len(rec) >= 10 and info["stress"] != info["rest"]:  # how far back toward calm afterwards
                     pos = (float(np.median(rec)) - info["rest"]) / (info["stress"] - info["rest"])
                     info["recovered_pct"] = round(100 * (1 - pos), 0)
-            else:
+            elif len(r) or len(s):
                 info["note"] = "not enough clean signal"
+            else:
+                info["note"] = "not recorded"
             signals[name] = info
 
         used = [k for k, v in signals.items() if v["used"]]
-        has_rest = [k for k, v in signals.items() if "rest" in v]
+        has_rest = [k for k, v in signals.items() if "rest" in v and SIGNALS[k] != 0]
         if used:
             mode = "anchored"
             confidence = "good" if any(signals[k]["effect"] >= 0.8 for k in used) else "ok"
@@ -111,48 +132,63 @@ class StressModel:
             mode, confidence = None, None
 
         cal = {"ok": mode is not None, "mode": mode, "confidence": confidence, "used": used,
+               "used_without_headset": [k for k in used if k not in HEADSET_SIGNALS],
                "signals": {k: {kk: (round(vv, 3) if isinstance(vv, float) else vv) for kk, vv in v.items()}
-                           for k, v in signals.items()}}
-        self._samples = {p: {"eeg": [], "hr": []} for p in CALIB_PHASES}
+                           for k, v in signals.items() if v["n_rest"] or v["n_stress"]}}
+        self._samples = _empty_samples()
         if cal["ok"]:
             self.calibration = cal
             self._signals = signals
-            self._smoothed = None
+            self._smoothed = {}
         return cal
 
-    def score(self, ratio_log, hr_bpm, hr_q, dt):
-        cal = self.calibration
-        if cal is None:
-            return None, {}
-        values = {"eeg": ratio_log,
-                  "hr": hr_bpm if (hr_bpm is not None and hr_q >= self.cfg.min_hr_quality) else None}
-        parts, weights = {}, {}
-        for name, direction in SIGNALS.items():
-            info, x = self._signals[name], values[name]
-            if x is None:
-                continue
-            if cal["mode"] == "anchored" and info["used"]:
-                parts[name] = float(np.clip((x - info["rest"]) / (info["stress"] - info["rest"]), -0.5, 1.5))
-                weights[name] = min(info["effect"], 2.0)
-            elif cal["mode"] == "rest_only" and "rest" in info:
-                parts[name] = float(np.clip(direction * (x - info["rest"]) / info["rest_sd"] / 3, -0.5, 1.5))
-                weights[name] = 1.0
-        if not parts:
-            return (round(self._smoothed, 1) if self._smoothed is not None else None), parts
-        position = sum(parts[k] * weights[k] for k in parts) / sum(weights.values())
-        raw = float(np.clip(100 * position, 0, 100))
-        if self._smoothed is None:
-            self._smoothed = raw
-        else:
-            a = 1 - math.exp(-dt / self.cfg.smooth_tau_s)
-            self._smoothed += a * (raw - self._smoothed)
-        return round(self._smoothed, 1), {k: round(v, 2) for k, v in parts.items()}
+    def _position(self, name, x):
+        """Where a value sits for this person: 0 = calm (rest anchor), 1 = stressed (stress anchor)."""
+        info, mode = self._signals[name], self.calibration["mode"]
+        if mode == "anchored" and info["used"]:
+            return float(np.clip((x - info["rest"]) / (info["stress"] - info["rest"]), -0.5, 1.5)), min(info["effect"], 2.0)
+        if mode == "rest_only" and "rest" in info and SIGNALS[name] != 0:
+            return float(np.clip(SIGNALS[name] * (x - info["rest"]) / info["rest_sd"] / 3, -0.5, 1.5)), 1.0
+        return None, 0.0
 
+    def _smooth(self, key, raw, dt):
+        prev = self._smoothed.get(key)
+        if raw is None:
+            return round(prev, 1) if prev is not None else None
+        if prev is None:
+            self._smoothed[key] = raw
+        else:
+            self._smoothed[key] = prev + (1 - math.exp(-dt / self.cfg.smooth_tau_s)) * (raw - prev)
+        return round(self._smoothed[key], 1)
+
+    def score(self, values: dict, dt):
+        """Returns (full score, score without headset signals, per-signal positions)."""
+        if self.calibration is None:
+            return None, None, {}
+        parts, weights = {}, {}
+        for name in SIGNALS:
+            x = values.get(name)
+            if x is None or name not in self._signals:
+                continue
+            pos, w = self._position(name, x)
+            if pos is not None:
+                parts[name], weights[name] = pos, w
+
+        def combine(keys):
+            keys = [k for k in keys if k in parts]
+            if not keys:
+                return None
+            return float(np.clip(100 * sum(parts[k] * weights[k] for k in keys) / sum(weights[k] for k in keys), 0, 100))
+
+        full = self._smooth("full", combine(parts), dt)
+        body = self._smooth("body", combine([k for k in parts if k not in HEADSET_SIGNALS]), dt)
+        return full, body, {k: round(v, 2) for k, v in parts.items()}
 
 
 class SessionLogger:
-    METRIC_COLS = ["t", "phase", "stress", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
-                   "hr_bpm", "hr_quality", "motion", "usable_channels", "contact"]
+    FACE_COLS = ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"]
+    METRIC_COLS = (["t", "phase", "stress", "stress_body", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
+                    "hr_bpm", "hr_quality", "motion", "usable_channels", "contact"] + FACE_COLS)
 
     def __init__(self, root: Path):
         self.root = root
@@ -184,10 +220,11 @@ class SessionLogger:
             return
         eeg, hr = m["eeg"], m["hr"]
         contact = "".join(c["q"][0] for c in eeg.get("channels", {}).values())  # e.g. "ggfb"
-        self._mw.writerow([m["t"], m["phase"], m["stress"], m["z"].get("eeg"), m["z"].get("hr"),
+        face = m.get("face") or {}
+        self._mw.writerow([m["t"], m["phase"], m["stress"], m.get("stress_body"), m["z"].get("eeg"), m["z"].get("hr"),
                            eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
                            hr.get("bpm"), hr.get("quality"), m["motion"].get("level"),
-                           eeg.get("usable"), contact])
+                           eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS])
 
     def event(self, t, phase, name, data):
         if self.active:
@@ -222,6 +259,13 @@ class Engine:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self.pending_baseline = None  # set when calibration ends, picked up by the server
+        self._face, self._face_t = None, 0.0
+
+    def set_face(self, features: dict):
+        """Face features computed in the browser (MediaPipe), about once per second."""
+        with self._lock:
+            self._face = {k: float(v) for k, v in features.items() if k in SIGNALS and v is not None}
+            self._face_t = time.time()
 
     def start(self):
         self.source.start()
@@ -273,15 +317,18 @@ class Engine:
             ratio = feats.get("ratio_log")
             if motion["flag"]:
                 ratio = None  # head movement corrupts EEG; skip this window
-            self.model.collect(self.phase, ratio, hr["bpm"], hr["quality"])
-            stress, z = self.model.score(ratio, hr["bpm"], hr["quality"], cfg.tick_s)
-            if eeg is None:
-                stress = None  # headset not streaming: show nothing rather than a stale score
+            face = self._face if (self._face and time.time() - self._face_t < cfg.face_max_age_s) else None
+            values = {"eeg": ratio, "hr": hr["bpm"] if hr["quality"] >= cfg.min_hr_quality else None, **(face or {})}
+            self.model.collect(self.phase, values)
+            full, body, z = self.model.score(values, cfg.tick_s)
+            # Main score: with EEG when the headset streams, otherwise the headset-free score.
+            stress = full if eeg is not None else body
             self.seq += 1
             m = {
                 "type": "metrics", "seq": self.seq, "t": self.now(), "phase": self.phase,
-                "stress": stress, "calibrated": self.model.calibration is not None, "z": z, "used": sorted(z),
-                "eeg": feats, "hr": hr, "motion": motion, "source": src.status(),
+                "stress": stress, "stress_body": body, "calibrated": self.model.calibration is not None,
+                "z": z, "used": sorted(z), "eeg": feats, "hr": hr, "motion": motion, "face": face,
+                "source": src.status(),
             }
             self.latest = m
             self.logger.metric(m)
