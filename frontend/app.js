@@ -9,7 +9,7 @@ const DUR = QUICK
 // Calibration protocols, in seconds (see docs/methods.md)
 const PROTOCOLS = QUICK
   ? { standard: { rest: 15, stress: 25, recovery: 10 }, short: { rest: 10, stress: 15, recovery: 0 } }
-  : { standard: { rest: 180, stress: 180, recovery: 120 }, short: { rest: 60, stress: 90, recovery: 0 } };
+  : { standard: { rest: 180, stress: 120, recovery: 120 }, short: { rest: 60, stress: 75, recovery: 0 } };
 const PER_PROBLEM_S = 6;  // time limit per arithmetic problem under pressure
 const BREATH_HALF_S = 5;  // 5 s in + 5 s out = 6 breaths per minute
 const SUB_START = 1022, SUB_STEP = 13; // serial subtraction stressor (Trier Social Stress Test style)
@@ -632,6 +632,134 @@ async function serialSubtraction(seconds) {
   return { ...stats, best_streak: best };
 }
 
+// Quick math, MIST-inspired (Dedovic et al., 2005): a new problem every time, single-digit answer typed
+// with one key, five difficulty levels that rise after 3 correct answers in a row and drop after an error.
+function makeMathItem(level) {
+  const r = rand(0, 9); // the answer is always a single digit
+  let text;
+  if (level === 1) {
+    const b = rand(1, 9);
+    text = r + b <= 18 && Math.random() < 0.5 ? `${r + b} − ${b}` : (() => { const a = rand(0, r); return `${a} + ${r - a}`; })();
+  } else if (level === 2) {
+    const c = rand(1, 9), a = rand(1, 9), b = r + c - a;
+    text = b >= 1 && b <= 9 ? `${a} + ${b} − ${c}` : `${r + c} − ${c}`;
+  } else if (level === 3) {
+    const big = rand(12, 48);
+    text = big - r >= 3 ? `${big} − ${big - r}` : `${big} − ${big}`;
+    if (big - r < 3) return { text, answer: 0 };
+  } else if (level === 4) {
+    const a = rand(2, 9), b = rand(2, 9), c = a * b - r;
+    text = c >= 0 ? `${a} × ${b} − ${c}` : `${a} × ${b} − ${a * b}`;
+    if (c < 0) return { text, answer: 0 };
+  } else {
+    const a = rand(3, 9), b = rand(3, 9), total = a * b - r;
+    if (total < 2) return makeMathItem(4);
+    const c = rand(1, total - 1), d = total - c;
+    text = `${a} × ${b} − ${c} − ${d}`;
+  }
+  return { text, answer: r };
+}
+
+// Colour words (Stroop, 1935): name the INK colour, not the word. 75% of items are incongruent.
+const STROOP = { R: ["RED", "#d64545"], G: ["GREEN", "#2e9e5b"], B: ["BLUE", "#2f6fd6"], Y: ["YELLOW", "#d4a514"] };
+function makeStroopItem() {
+  const keys = Object.keys(STROOP);
+  const ink = keys[rand(0, 3)];
+  let word = ink;
+  if (Math.random() < 0.75) while (word === ink) word = keys[rand(0, 3)];
+  return { html: `<span class="stroop-word" style="color:${STROOP[ink][1]}">${STROOP[word][0]}</span>`, answer: ink };
+}
+
+// Shared engine for the two fast tasks: adaptive answer time limit (tighter after successes, looser after
+// failures) and the MIST-style comparison with an "average participant". No restart: just the next item.
+async function fastTask(kind, seconds) {
+  const stroop = kind === "stroop";
+  const fb = $("sub-feedback"), prompt = $("sub-prompt");
+  const [minLim, maxLim] = stroop ? [0.9, 3] : [2, 10];
+  let limit = stroop ? 2.2 : 6, level = 1, streak = 0, best = 0, cur = null, shownAt = 0;
+  const recent = [];
+  const stats = { attempts: 0, correct: 0, timeouts: 0, max_level: 1 };
+  const updateCompare = () => {
+    const you = recent.length ? Math.round(100 * recent.filter(Boolean).length / recent.length) : 0;
+    const avg = Math.min(95, you + 25);
+    $("cmp-you").style.width = `${you}%`; $("cmp-you-val").textContent = `${you}%`;
+    $("cmp-avg").style.width = `${avg}%`; $("cmp-avg-val").textContent = `${avg}%`;
+  };
+  const next = () => {
+    cur = stroop ? makeStroopItem() : makeMathItem(level);
+    prompt.innerHTML = stroop ? cur.html : `${cur.text} = ?`;
+    shownAt = performance.now();
+  };
+  const answer = (given, timeout) => {
+    const ok = !timeout && given === cur.answer;
+    stats.attempts++;
+    if (ok) stats.correct++;
+    if (timeout) stats.timeouts++;
+    recent.push(ok); if (recent.length > 10) recent.shift();
+    send({ type: "event", name: "calib_answer", data: { task: kind, item: stroop ? cur.answer : cur.text, given,
+      correct: ok, timeout, level, rt: +((performance.now() - shownAt) / 1000).toFixed(3), limit: +limit.toFixed(2),
+      stress: state.latest ? state.latest.stress : null } });
+    if (ok) {
+      streak++; best = Math.max(best, streak);
+      limit = Math.max(minLim, limit * 0.92);
+      if (!stroop && streak % 3 === 0) { level = Math.min(5, level + 1); stats.max_level = Math.max(stats.max_level, level); }
+      fb.className = "feedback ok"; fb.textContent = "✓";
+      sfx.right();
+    } else {
+      streak = 0;
+      limit = Math.min(maxLim, limit * 1.12);
+      if (!stroop) level = Math.max(1, level - 1);
+      fb.className = "feedback ko"; fb.textContent = timeout ? "Too slow" : "Wrong";
+      sfx.wrong();
+      document.body.classList.remove("flash-bad"); void document.body.offsetWidth; document.body.classList.add("flash-bad");
+    }
+    updateCompare();
+    next();
+  };
+  const onKey = (e) => {
+    if (stroop) {
+      const k = e.key.toUpperCase();
+      if (STROOP[k]) { e.preventDefault(); answer(k, false); }
+    } else if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault(); answer(Number(e.key), false);
+    }
+  };
+  if (document.activeElement) document.activeElement.blur();
+  document.addEventListener("keydown", onKey);
+  fb.textContent = "";
+  updateCompare();
+  next();
+  let lastWhole = null;
+  await countdown(seconds, (rem) => {
+    const whole = Math.ceil(rem);
+    $("sub-timer").textContent = whole;
+    $("sub-timer").classList.toggle("urgent", rem <= 10);
+    if (rem > 0 && whole !== lastWhole) { lastWhole = whole; rem <= 10 ? sfx.tickUrgent() : sfx.tick(); }
+    const el = (performance.now() - shownAt) / 1000;
+    $("sub-limit-bar").style.width = `${Math.max(0, 100 * (1 - el / limit))}%`;
+    if (el >= limit && rem > 0) answer(null, true);
+  });
+  document.removeEventListener("keydown", onKey);
+  prompt.textContent = "Time";
+  return { ...stats, best_streak: best };
+}
+
+const STRESSOR_LEADS = {
+  math: "Solve each calculation as fast as you can: every answer is a single digit, just press the key. " +
+    "It gets harder as you succeed, and the time limit gets shorter.",
+  stroop: "Press the key for the <b>ink colour</b> of the word, not the word itself: <kbd>R</kbd> red, " +
+    "<kbd>G</kbd> green, <kbd>B</kbd> blue, <kbd>Y</kbd> yellow. Be fast: the time limit gets shorter.",
+  serial: "Count backwards from <b>1022</b> in steps of <b>13</b>, as fast as you can. Type each number and press Enter. " +
+    "A mistake or running out of time sends you back to 1022.",
+};
+async function runStressor(kind, seconds) {
+  $("stress-lead").innerHTML = STRESSOR_LEADS[kind];
+  $("sub-answer").hidden = kind !== "serial";
+  $("stroop-keys").hidden = kind !== "stroop";
+  const result = kind === "serial" ? await serialSubtraction(seconds) : await fastTask(kind, seconds);
+  return { task: kind, ...result };
+}
+
 async function recoveryRest(seconds) {
   await countdown(seconds, (rem, tot) => {
     $("rec-bar").style.width = `${100 * (1 - rem / tot)}%`;
@@ -711,7 +839,7 @@ async function calibrate() {
     extra.stai_before = await staiSurvey(p);
     calibShow("stress", p);
     setPhase("calib_stress");
-    extra.stressor = await serialSubtraction(p.stress);
+    extra.stressor = await runStressor($("stressor").value, p.stress);
     setPhase("calib_survey");
     extra.stai_after = await staiSurvey(p);
     if (p.recovery) {

@@ -178,6 +178,10 @@ button:disabled { opacity: 0.5; cursor: default; }
   border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.8rem; color: var(--text); background: var(--surface); }
 .stai-opts input { display: none; }
 .stai-opts label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.stroop-keys { display: flex; justify-content: center; gap: 18px; color: var(--muted); font-size: 0.9rem; flex-wrap: wrap; }
+kbd { font: 600 0.85rem ui-monospace, Consolas, monospace; border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 5px; padding: 1px 7px; background: var(--surface); color: var(--text); }
+.problem .stroop-word { letter-spacing: 0.04em; }
 .compare { max-width: 420px; margin: 18px auto 0; display: grid; gap: 8px; font-size: 0.85rem; text-align: left; }
 .cmp-row { display: grid; grid-template-columns: 140px 1fr 44px; align-items: center; gap: 10px; }
 .cmp-track { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; }

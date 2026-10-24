@@ -23,7 +23,7 @@ Two presets are available: **Standard** (recommended) and **Short** (for live de
 |---|---|---|---|---|
 | 1. Baseline | 3 min | 1 min | Low-demand "vanilla" task: watch a circle change colour and press Space when it turns blue. Eyes stay open. | Jennings et al. (1992); Barry et al. (2007) |
 | 2. Self-report | ~30 s | ~30 s | Six-item State-Trait Anxiety Inventory (STAI-6) | Marteau & Bekker (1992) |
-| 3. Stressor | 3 min | 1.5 min | Serial subtraction from 1022 in steps of 13. An error or a timeout restarts from 1022. Answer time limit tightens after each success. A bar compares the user with a fictitious, always-better "average participant". | Kirschbaum et al. (1993); Dedovic et al. (2005); Dickerson & Kemeny (2004) |
+| 3. Stressor | 2 min | 1 min 15 | One of three tasks (below), always under an adaptive answer time limit and with a bar comparing the user to a fictitious, always-better "average participant". | Dedovic et al. (2005); Dickerson & Kemeny (2004); Stroop (1935); Kirschbaum et al. (1993) |
 | 4. Self-report | ~30 s | ~30 s | STAI-6 again, as a manipulation check | Marteau & Bekker (1992); Allen et al. (2014) |
 | 5. Recovery | 2 min | — | Quiet rest, eyes open on a fixation dot | Allen et al. (2014); Birkett (2011) |
 | 6. Profile | — | — | Per-signal effect sizes, decision, and debrief | Cohen (1988) |
@@ -36,14 +36,20 @@ Two presets are available: **Standard** (recommended) and **Short** (for live de
 - The task keeps the user awake and attentive, and it keeps the eyes open. This matters for EEG: eyes-closed and eyes-open resting states differ in both power and topography, so they are not interchangeable baselines (Barry et al., 2007).
 - Hits on the blue circle are recorded as an attention check.
 
-**Serial subtraction as the stressor.**
-- Serial subtraction is the arithmetic component of the Trier Social Stress Test (TSST; Kirschbaum et al., 1993). The TSST protocol tells participants that each error means starting again from the initial number.
-- Across the six studies reported with the original test, the TSST raised ACTH, cortisol, GH, prolactin and heart rate.
-- Clutch uses the commonly used variant that counts down from 1022 by 13.
+**Choice of stressor.** Three tasks are offered. All share the same pressure elements (see below).
 
+| Task | What the user does | Basis | Intensity |
+|---|---|---|---|
+| **Quick math** (default) | A new problem each time, with a single-digit answer pressed on one key. Five difficulty levels, going from `7 + 2` to `6 × 8 − 5 − 34`. Up a level after 3 correct in a row, down a level after an error. | Montreal Imaging Stress Task (MIST): computerised arithmetic under time pressure with negative feedback (Dedovic et al., 2005) | moderate |
+| **Colour words** | Press the key for the ink colour of a colour word. 75% of items are incongruent (e.g. "RED" printed in blue). | Stroop interference (Stroop, 1935); a paced computer Stroop task raises heart rate and self-reported anxiety (Renaud & Blondin, 1997) | mild to moderate |
+| **Serial subtraction** | Count down from 1022 by 13, typed. An error or timeout restarts from 1022. | Arithmetic part of the Trier Social Stress Test (TSST; Kirschbaum et al., 1993), which raised ACTH, cortisol and heart rate across six studies | strongest |
+
+- **Why quick math is the default:** in testing, the serial subtraction's restart rule made users repeat the same sequence for minutes, which felt punishing.
+- The MIST-style task keeps time pressure, adaptive difficulty and social comparison, but presents a new item each time.
+- **Trade-off:** a milder stressor produces a smaller physiological response, so effect sizes may be smaller. The self-report check (STAI-6) shows whether the chosen task actually stressed the user.
 **Time pressure and social comparison.**
 - The Montreal Imaging Stress Task (MIST; Dedovic et al., 2005) adapted the TSST to a computer. It combines mental arithmetic under time limits with social-evaluative threat.
-- Clutch borrows two of its elements:
+- Clutch borrows two of its elements, for all three tasks:
   - an answer time limit that tightens as the user succeeds;
   - a comparison bar showing a fictitious average participant who always does better.
 - A meta-analysis of 208 laboratory stressors found that tasks that are **uncontrollable** and carry **social-evaluative threat** produce the largest cortisol and ACTH responses and the longest recovery (Dickerson & Kemeny, 2004). This is why the stressor includes both elements rather than arithmetic alone.
@@ -105,7 +111,7 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
 
 ## 4. Limitations
 - This is a single-session, single-user calibration on a 4-channel dry-electrode consumer headset. Contact quality strongly affects EEG validity.
-- The calibration stressor is shorter than the full TSST (5 min of arithmetic plus a speech) and has no live audience, so the response is expected to be milder.
+- The calibration stressor (2 min) is much shorter than the full TSST (5 min of arithmetic plus a speech) and has no live audience, so the response is expected to be milder, especially with the quick math and colour word tasks.
 - Baseline durations (1–3 min) are shorter than the 10–20 min studied by Jennings et al. (1992). This is a practical trade-off.
 - The STAI is copyrighted (Mind Garden). Its use here is for a research prototype; other uses need a license.
 - Clutch is a wellness and performance prototype, not a medical or diagnostic device.
@@ -118,6 +124,8 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
 - Al-Shargie, F., et al. (2016). Mental stress assessment using simultaneous measurement of EEG and fNIRS. *Biomedical Optics Express, 7*(10), 3882–3898. https://pmc.ncbi.nlm.nih.gov/articles/5102531
 - Barry, R. J., Clarke, A. R., Johnstone, S. J., et al. (2007). EEG differences between eyes-closed and eyes-open resting conditions. *Clinical Neurophysiology, 118*(12), 2765–2773. https://ro.uow.edu.au/hbspapers/1640
 - Birkett, M. A. (2011). The Trier Social Stress Test protocol for inducing psychological stress. *Journal of Visualized Experiments, 56*, e3238. https://doi.org/10.3791/3238
+- Renaud, P., & Blondin, J.-P. (1997). The stress of Stroop performance: Physiological and emotional responses to color-word interference, task pacing, and pacing speed. *International Journal of Psychophysiology, 27*(2), 87–97. https://doi.org/10.1016/S0167-8760(97)00049-4
+- Stroop, J. R. (1935). Studies of interference in serial verbal reactions. *Journal of Experimental Psychology, 18*, 643–662. https://doi.org/10.1037/h0054651
 - Cohen, J. (1988). *Statistical power analysis for the behavioral sciences* (2nd ed.). Lawrence Erlbaum Associates.
 - Dedovic, K., et al. (2005). The Montreal Imaging Stress Task: Using functional imaging to investigate the effects of perceiving and processing psychosocial stress in the human brain. *Journal of Psychiatry & Neuroscience, 30*(5), 319–325. https://www.jpn.ca/content/30/5/319
 - Dickerson, S. S., & Kemeny, M. E. (2004). Acute stressors and cortisol responses: A theoretical integration and synthesis of laboratory research. *Psychological Bulletin, 130*(3), 355–391. https://doi.org/10.1037/0033-2909.130.3.355
@@ -134,7 +142,7 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
 
 ### Notes on the references
 - **Kirschbaum et al. (1993):** citation details confirmed. The starting number 1022 and step of 13 are **not** in the original paper. They are a widely used variant, and some studies use other numbers.
-- **Dedovic et al. (2005):** the article is confirmed. The exact adaptive time-limit rule used by Clutch (×0.9 after a success, ×1.1 after a failure, 2.5–10 s) is our own simplification of the MIST.
+- **Dedovic et al. (2005):** the article is confirmed. The five difficulty levels and adaptive time-outs follow public descriptions of MIST implementations (e.g. the Millisecond Inquisit script, itself a best-guess implementation), not a rule quoted from the paper. Our parameters are our own: limit ×0.92 after a success and ×1.12 after a failure, 2–10 s for math and 0.9–3 s for colour words; ×0.9 and ×1.1 within 2.5–10 s for serial subtraction.
 - **Al-Shargie et al. (2016):** stress was induced with mental arithmetic under time pressure and negative feedback. It is not confirmed that this was the MIST itself.
 - **Barry et al. (2007), Al-Shargie et al. (2016), Dedovic et al. (2005):** full author lists were not re-checked, hence "et al.". For Barry et al., the DOI also differs between indexes. Check the publisher records before formal citation.
 - **Cohen (1988):** standard textbook, cited for the conventional small, medium and large thresholds. Not re-checked online.

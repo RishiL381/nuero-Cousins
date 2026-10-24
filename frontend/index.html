@@ -76,8 +76,15 @@
           <p class="hint">Calibrate once, then pop the sea out onto your screen. Calm mind, calm water.</p>
           <label>Calibration protocol
             <select id="protocol">
-              <option value="standard">Standard: baseline 3 min, stress 3 min, recovery 2 min (recommended)</option>
-              <option value="short">Short: baseline 1 min, stress 1.5 min (demo)</option>
+              <option value="standard">Standard: baseline 3 min, stress 2 min, recovery 2 min (recommended)</option>
+              <option value="short">Short: baseline 1 min, stress 1 min 15 (demo)</option>
+            </select>
+          </label>
+          <label>Stress test
+            <select id="stressor">
+              <option value="math">Quick math: a new calculation each time (MIST-style, recommended)</option>
+              <option value="stroop">Colour words: name the ink colour (Stroop)</option>
+              <option value="serial">Count down from 1022 by 13 (TSST, hardest)</option>
             </select>
           </label>
           <div class="row">
@@ -142,11 +149,13 @@
            social comparison (Dedovic et al., 2005) -->
       <div id="calib-stress" class="center calib-part" hidden>
         <h1>Stress test</h1>
-        <p class="lead">Count backwards from <b>1022</b> in steps of <b>13</b>, as fast as you can. Type each number and
-          press Enter. A mistake or running out of time sends you back to 1022.</p>
-        <div class="big-timer" id="sub-timer">180</div>
-        <div class="problem" id="sub-prompt">1022 − 13 = ?</div>
+        <p class="lead" id="stress-lead"></p>
+        <div class="big-timer" id="sub-timer">120</div>
+        <div class="problem" id="sub-prompt"></div>
         <input id="sub-answer" class="answer" type="text" inputmode="numeric" autocomplete="off" placeholder="Next number, then Enter">
+        <div class="stroop-keys" id="stroop-keys" hidden>
+          <span><kbd>R</kbd> red</span><span><kbd>G</kbd> green</span><span><kbd>B</kbd> blue</span><span><kbd>Y</kbd> yellow</span>
+        </div>
         <div class="progress thin"><div class="bar" id="sub-limit-bar"></div></div>
         <div class="feedback" id="sub-feedback"></div>
         <div class="compare">
@@ -174,8 +183,9 @@
         <details class="refs">
           <summary>Method and references</summary>
           <p>Baseline: low-demand "vanilla" task with eyes open (Jennings et al., 1992; Barry et al., 2007).
-            Stressor: serial subtraction from the Trier Social Stress Test (Kirschbaum et al., 1993) with the time
-            pressure and social comparison of the Montreal Imaging Stress Task (Dedovic et al., 2005); uncontrollable,
+            Stressor: quick math in the style of the Montreal Imaging Stress Task (Dedovic et al., 2005), colour words
+            (Stroop, 1935; Renaud &amp; Blondin, 1997) or serial subtraction from the Trier Social Stress Test
+            (Kirschbaum et al., 1993), all with MIST time pressure and social comparison; uncontrollable,
             socially evaluated tasks give the strongest stress responses (Dickerson &amp; Kemeny, 2004). Self-report:
             six-item STAI (Marteau &amp; Bekker, 1992). Signal selection: Cohen's d &ge; 0.5 (Cohen, 1988).
             EEG band power: Welch (1967); alpha and cognitive state: Klimesch (1999); Muse validity: Krigolson et al. (2017).
