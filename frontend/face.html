@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clutch Face Tracker</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="face.css">
+</head>
+<body class="face-page">
+  <header class="topbar">
+    <a class="brand" href="index.html">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="15" fill="var(--accent)"/>
+        <path d="M5 18c3-3 5-3 8 0s5 3 8 0 5-3 6-1" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M7 23c2.5-2 4.5-2 7 0s4.5 2 7 0 4-2 5-1" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      Clutch <span class="muted sub">Face tracker</span>
+    </a>
+    <div class="topbar-right">
+      <span class="pill"><span class="pill-dot" id="face-dot"></span><span id="face-status">Camera off</span></span>
+      <span class="pill mono"><span id="fps">0</span> fps</span>
+      <span class="pill" title="EEG stress from the headset engine (training target)">EEG stress <b id="eeg-stress">—</b></span>
+      <span class="pill rec" id="rec-pill" hidden><span class="rec-dot"></span>REC <span id="rec-rows">0</span></span>
+      <span class="conn" id="conn" title="Connection to the Python server"></span>
+    </div>
+  </header>
+
+  <main class="face-main">
+    <div class="face-top">
+      <section class="card stage-card">
+        <div class="stage" id="stage">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div class="stage-empty" id="stage-empty">
+            <p id="stage-msg">Start the camera to begin. Video stays in this browser; only numbers are sent.</p>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="primary" id="btn-camera">Start camera</button>
+          <select id="camera-select" title="Camera" hidden></select>
+          <select id="overlay-mode" title="Overlay">
+            <option value="contours">Contours</option>
+            <option value="mesh">Full mesh</option>
+            <option value="points">Points</option>
+            <option value="off">No overlay</option>
+          </select>
+          <label class="check"><input type="checkbox" id="mirror" checked> Mirror</label>
+        </div>
+        <dl class="stats compact" id="head-stats">
+          <dt>Head yaw / pitch / roll</dt><dd id="pose">—</dd>
+          <dt>Head speed</dt><dd id="head-speed">—</dd>
+          <dt>Eye blink</dt><dd id="blink-now">—</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>Facial action units <span class="muted note">bar = now · tick = baseline · line = event threshold</span></h2>
+        <div class="kpis">
+          <div><span class="kpi-label">Tension</span><span class="kpi" id="k-tension">—</span></div>
+          <div><span class="kpi-label">Micro / min</span><span class="kpi" id="k-micro">—</span></div>
+          <div><span class="kpi-label">Blinks / min</span><span class="kpi" id="k-blink">—</span></div>
+          <div><span class="kpi-label">Activity</span><span class="kpi" id="k-activity">—</span></div>
+        </div>
+        <div class="au-list" id="au-list"></div>
+        <p class="hint" id="warm-note">Baselines settle over the first few seconds: keep a neutral face.</p>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Live stream <span class="muted note">last 60 s · hover for values</span></h2>
+        <div class="legend" id="event-legend"></div>
+      </div>
+      <div class="strips" id="strips">
+        <canvas id="strip-canvas"></canvas>
+        <div class="tooltip" id="tooltip" hidden></div>
+      </div>
+    </section>
+
+    <div class="face-bottom">
+      <section class="card">
+        <h2>Record training data</h2>
+        <label>Participant <input type="text" id="participant" placeholder="e.g. P1"></label>
+        <div class="row">
+          <button class="primary" id="btn-record" disabled>Start recording</button>
+        </div>
+        <p class="small muted" id="rec-path">Writes face_features.csv (every 0.5 s, with the EEG targets) and face_frames.csv (every frame).
+          If a session is running in the main app, the files go into that session's folder.</p>
+
+        <h2 class="spaced">Micro-expression detection</h2>
+        <label>Sensitivity k = <b id="k-val"></b> (onset at baseline + k × spread)
+          <input type="range" id="k-slider" min="1.5" max="6" step="0.25"></label>
+        <label>Minimum amplitude = <b id="amp-val"></b>
+          <input type="range" id="amp-slider" min="0.02" max="0.3" step="0.01"></label>
+        <button id="btn-reset">Reset baselines</button>
+      </section>
+
+      <section class="card">
+        <h2>Events <span class="muted note">newest first</span></h2>
+        <div class="table-wrap">
+          <table class="events">
+            <thead><tr><th>Time</th><th>Action unit</th><th>Type</th><th>Duration</th><th>Peak</th></tr></thead>
+            <tbody id="event-rows"><tr class="empty"><td colspan="5">No events yet</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Training row <span class="muted note">last tick, as logged</span></h2>
+        <div class="table-wrap"><table class="kv" id="row-table"></table></div>
+      </section>
+    </div>
+
+    <details class="card raw">
+      <summary><h2>All 52 MediaPipe blendshapes</h2></summary>
+      <div class="raw-grid" id="raw-grid"><p class="muted small">Appears once a face is found.</p></div>
+    </details>
+  </main>
+
+  <footer class="muted">MediaPipe Face Landmarker runs locally in the browser · Action-unit names are approximate FACS mappings · Wellness prototype, not a medical device.</footer>
+  <script src="face-features.js"></script>
+  <script type="module" src="face.js"></script>
+</body>
+</html>

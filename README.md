@@ -89,6 +89,32 @@ appears and stays on top of your other apps:
 The always-on-top window uses Chrome/Edge Document Picture-in-Picture. Other browsers get a normal
 small window (`/widget.html`), which can also be opened on its own, for example on a second screen.
 
+## Face tracker (webcam features)
+
+Open http://localhost:8000/face.html (or **Face tracker** in the top bar) and press **Start camera**.
+MediaPipe Face Landmarker runs in the browser; the video never leaves it, only numbers go to the server.
+Use Chrome or Edge, and keep the tab visible: browsers pause hidden tabs.
+
+What it extracts (`frontend/face-features.js`):
+- **14 action units** from the 52 MediaPipe blendshapes, e.g. brow lowerer (AU4), lip press (AU24),
+  nose wrinkle (AU9). The FACS codes are approximate mappings.
+- **Micro-expressions:** an action unit rises above its own rolling baseline (+ k × spread) for 60-500 ms.
+  Longer is a macro expression; an expression held over 4 s becomes the new baseline.
+- **Tension index** (mean of brow lowerer, squint, nose wrinkle, lip corner depress, stretch, press, suck),
+  left/right asymmetry, facial activity (how fast the face changes), blink rate and duration,
+  head yaw/pitch/roll, head speed and fidgeting.
+
+The page shows the face mesh, every action unit with its baseline and event threshold, 60 s strip charts
+(hover for values) with the EEG stress target, an event log, and the exact training row.
+Sliders tune the detector live.
+
+**Record** writes, every 0.5 s, `face_features.csv` (features + the EEG targets at that moment: stress,
+rest-to-stress positions pos_eeg/pos_hr, alpha/beta, heart rate) and `face_frames.csv` (every frame: head pose + 52 raw blendshapes).
+If a session is running in the main app, the files go into its folder, so face and EEG share the same clock;
+otherwise into `sessions/<time>_<participant>_face/`. Calibrate in the main app first so the targets are filled.
+
+Tests: `node --test tests/face_features.test.js` and `.venv\Scripts\python tests\test_face_logger.py`.
+
 ## Session flow
 
 Calibration 60 s → warm-up 30 s (not scored) → **round 1** 90 s under pressure → **reset** 90 s → **round 2** 90 s → results.
@@ -122,6 +148,8 @@ frontend/              the web app (no build step); widget.js draws the sea scen
 tools/check_muse.py    headset diagnostic + eyes-closed alpha test
 tools/fake_muselsl.py  simulated Muse published on LSL like muselsl
 tests/test_pipeline.py end-to-end test on simulated data
+clutch/face.py         logs webcam face features next to the EEG targets
+frontend/face.*        face tracker page (MediaPipe in the browser) and its feature extraction
 analysis/              pilot results across sessions
 ```
 
