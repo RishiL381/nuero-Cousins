@@ -8,8 +8,6 @@ Each get_* returns the most recent n samples as (channels, samples), or None.
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -133,10 +131,6 @@ class _Ring:
             return self.buf[:, -n:].copy() if n > 0 else None
 
 
-class _MuselslExited(Exception):
-    pass
-
-
 class LslSource:
     """Muse data read from Lab Streaming Layer, as published by muselsl.
 
@@ -144,64 +138,29 @@ class LslSource:
       type EEG -> TP9, AF7, AF8, TP10, Right AUX at 256 Hz, microvolts (we drop Right AUX)
       type PPG -> PPG1, PPG2, PPG3 at 64 Hz (optical pulse sensor)
       type ACC -> X, Y, Z at 52 Hz, in g
-    With start_muselsl=True this class launches muselsl itself in a child process, so one
-    command runs everything. Otherwise run muselsl in another terminal first.
+    The connection itself is handled by a HeadsetManager (muselsl in a child process), driven from
+    the web app's Connect / Disconnect buttons, or started at launch with autoconnect=True.
+    A muselsl started outside the app (another terminal) is picked up too.
+    Streams are looked for continuously in the background, so the app starts before the headset
+    is connected and recovers when it reconnects.
     """
 
     kind = "muselsl"
     EEG_KEEP = ["TP9", "AF7", "AF8", "TP10"]
+    STALE_S = 10.0  # no EEG for this long: drop the streams and look for them again
 
-    def __init__(self, name: str = "", start_muselsl: bool = True, resolve_timeout: float = 45.0):
-        self.name = name
-        self.start_muselsl = start_muselsl
-        self.resolve_timeout = resolve_timeout
-        self.proc = None
-        self._launched_at = 0.0
-        self.eeg_fs = self.ppg_fs = self.accel_fs = None
+    def __init__(self, name: str = "", autoconnect: bool = False):
+        from .headset import HeadsetManager
+        self.headset = HeadsetManager(name)
+        self.autoconnect = autoconnect
+        # Muse 2 defaults until the streams say otherwise
+        self.eeg_fs, self.ppg_fs, self.accel_fs = 256, 64, 52
         self.eeg_names = list(self.EEG_KEEP)
-        self._inlets = {}
-        self._rings = {}
-        self._keep = {}
-        self._last_rx = {}
+        self._inlets, self._rings, self._keep, self._last_rx = {}, {}, {}, {}
+        self._opened_at = None
+        self.stream_id = None
         self._stop = threading.Event()
         self._thread = None
-
-    def _launch_muselsl(self):
-        # Runs muselsl through our wrapper, which patches a Bleak race condition on Windows.
-        cmd = [sys.executable, "-m", "clutch.muselsl_runner", "stream", "--ppg", "--acc", "--retries", "3"]
-        if self.name:
-            cmd += ["--name", self.name]
-        print(f"[muselsl] starting: muselsl {' '.join(cmd[3:])}")
-        root = Path(__file__).resolve().parent.parent
-        self.proc = subprocess.Popen(cmd, cwd=root)
-        self._launched_at = time.time()
-
-    def _resolve(self, stype, timeout):
-        from pylsl import resolve_byprop
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if self.proc is not None and self.proc.poll() is not None:
-                raise _MuselslExited()
-            for info in resolve_byprop("type", stype, timeout=1.0):
-                if info.name() == "Muse":
-                    return info
-        return None
-
-    def _resolve_eeg(self, attempts=3):
-        """Find the EEG stream, relaunching muselsl if it crashes while connecting."""
-        for attempt in range(1, attempts + 1):
-            if self.start_muselsl:
-                self._launch_muselsl()
-            try:
-                return self._resolve("EEG", self.resolve_timeout)
-            except _MuselslExited:
-                if attempt == attempts:
-                    raise RuntimeError(
-                        "muselsl could not connect. Check: Muse on and blinking, not connected to a phone, "
-                        "not paired in Windows Bluetooth settings (remove it there if it is), close to the laptop. "
-                        "Fallback: --source brainflow") from None
-                print(f"[muselsl] connection failed, retrying ({attempt + 1}/{attempts})...")
-                time.sleep(2)
 
     @staticmethod
     def _labels(info):
@@ -211,15 +170,34 @@ class LslSource:
             ch = ch.next_sibling()
         return labels
 
-    def start(self):
+    @staticmethod
+    def _find(stype, timeout):
+        from pylsl import resolve_byprop
+        for info in resolve_byprop("type", stype, timeout=timeout):
+            if info.name() == "Muse":
+                return info
+        return None
+
+    def start(self, block=False, timeout=90.0):
+        if self.autoconnect:
+            if self._find("EEG", 1.5) is None:
+                self.headset.connect()
+            else:
+                print("[lsl] a Muse stream is already running (started outside the app): using it")
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        if block:
+            deadline = time.time() + timeout
+            while not self.status()["connected"]:
+                if time.time() > deadline:
+                    raise RuntimeError("No data from the headset. Check it is on, close, and not paired to a phone.")
+                time.sleep(0.2)
+
+    def _open(self, eeg_info):
         from pylsl import StreamInlet
-        eeg = self._resolve_eeg()
-        if eeg is None:
-            self.stop()
-            raise RuntimeError("No Muse EEG stream found on LSL. Start it with: muselsl stream --ppg --acc")
-        found = {"eeg": eeg}
+        found = {"eeg": eeg_info}
         for key, stype in (("ppg", "PPG"), ("accel", "ACC")):
-            info = self._resolve(stype, 5.0)
+            info = self._find(stype, 2.0)
             if info is not None:
                 found[key] = info
         for key, info in found.items():
@@ -231,43 +209,59 @@ class LslSource:
                 self.eeg_names = [labels[i] for i in keep] if len(keep) == 4 else list(self.EEG_KEEP)
             else:
                 keep = list(range(info.channel_count()))
-            fs = info.nominal_srate()
-            setattr(self, f"{key}_fs", int(round(fs)))
+            fs = int(round(info.nominal_srate()))
+            setattr(self, f"{key}_fs", fs)
             self._keep[key] = keep
-            self._rings[key] = _Ring(len(keep), int(fs * 30))
-            self._inlets[key] = inlet
+            self._rings[key] = _Ring(len(keep), fs * 30)
             self._last_rx[key] = None
-        rates = {"eeg": self.eeg_fs, "ppg": self.ppg_fs, "accel": self.accel_fs}
-        print("[lsl] streams: " + ", ".join(f"{k} {rates[k]} Hz" for k in found))
-        self._thread = threading.Thread(target=self._pull, daemon=True)
-        self._thread.start()
+            self._inlets[key] = inlet
+        self._opened_at = time.time()
+        self.stream_id = eeg_info.source_id()  # muselsl uses "Muse<bluetooth address>"
+        print("[lsl] streams: " + ", ".join(f"{k} {getattr(self, k + '_fs')} Hz" for k in found))
 
-    def _pull(self):
+    def _close(self):
+        for inlet in self._inlets.values():
+            try:
+                inlet.close_stream()
+            except Exception:
+                pass
+        self._inlets, self._rings, self._keep, self._last_rx = {}, {}, {}, {}
+        self._opened_at = None
+        self.stream_id = None
+
+    def _run(self):
         while not self._stop.is_set():
-            # muselsl exits on its own when the headset stops sending (off, out of range, Bluetooth drop).
-            # Relaunch it; the LSL inlets reconnect by themselves once the stream is back.
-            if (self.start_muselsl and self.proc is not None and self.proc.poll() is not None
-                    and time.time() - self._launched_at > 10):
-                print("[muselsl] stream stopped (headset off or out of range?), restarting...")
-                self._launch_muselsl()
-            for key, inlet in self._inlets.items():
-                samples, _ = inlet.pull_chunk(timeout=0.0, max_samples=2048)
+            if not self._inlets:
+                info = self._find("EEG", 1.0)
+                if info is not None:
+                    try:
+                        self._open(info)
+                    except Exception as exc:
+                        print(f"[lsl] could not open streams: {exc}")
+                        self._close()
+                continue
+            for key, inlet in list(self._inlets.items()):
+                try:
+                    samples, _ = inlet.pull_chunk(timeout=0.0, max_samples=2048)
+                except Exception:
+                    samples = None
                 if samples:
                     block = np.asarray(samples, dtype=float).T[self._keep[key], :]
                     self._rings[key].push(block)
                     self._last_rx[key] = time.time()
+                    if key == "eeg":
+                        self.headset.mark_streaming()
+            last = self._last_rx.get("eeg") or self._opened_at
+            if last is not None and time.time() - last > self.STALE_S:
+                print("[lsl] EEG stream silent, looking for it again")
+                self._close()
             time.sleep(0.02)
 
     def stop(self):
         self._stop.set()
         if self._thread:
-            self._thread.join(timeout=1)
-        if self.proc is not None and self.proc.poll() is None:
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
+            self._thread.join(timeout=2)
+        self.headset.stop()
 
     def _get(self, key, n):
         ring = self._rings.get(key)
@@ -291,7 +285,11 @@ class LslSource:
 
     def status(self):
         last = self._last_rx.get("eeg")
-        return {"kind": self.kind, "connected": last is not None and time.time() - last < 2.0}
+        connected = last is not None and time.time() - last < 2.0
+        hs = self.headset.status()
+        hs["external"] = connected and not hs["managed"]
+        hs["address"] = (self.stream_id or "").replace("Muse", "", 1) or None
+        return {"kind": self.kind, "connected": connected, "headset": hs}
 
     def on_phase(self, phase):
         pass
@@ -306,7 +304,7 @@ class MockSource:
     """
 
     kind = "mock"
-    PHASE_STRESS = {"idle": 0.3, "calibration": 0.25, "warmup": 0.4, "round1": 0.75,
+    PHASE_STRESS = {"idle": 0.3, "calib_rest": 0.25, "calib_stress": 0.85, "warmup": 0.4, "round1": 0.75,
                     "reset": 0.2, "round2": 0.5, "results": 0.3}
 
     def __init__(self, seed: int = 0):

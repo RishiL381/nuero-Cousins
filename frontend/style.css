@@ -125,6 +125,46 @@ button:disabled { opacity: 0.5; cursor: default; }
 .contact .dot.bad { background: var(--bad); }
 .contact.small { justify-content: center; margin-top: 18px; }
 
+/* Headset connection */
+.hs { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 14px; background: var(--bg); }
+.hs-status { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.92rem; }
+.hs-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.hs-dot.ok { background: var(--good); }
+.hs-dot.busy { background: var(--fair); animation: pulse 1.2s ease-in-out infinite; }
+.hs-dot.err { background: var(--bad); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.hs-controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.hs-controls input { flex: 1 1 160px; margin: 0; }
+.hs-log { font-family: ui-monospace, Consolas, monospace; font-size: 0.72rem; color: var(--muted); margin: 8px 0 0;
+  white-space: pre-wrap; word-break: break-all; max-height: 3.6em; overflow: hidden; }
+
+.contact-why { list-style: none; padding: 0; margin: 10px 0 0; font-size: 0.85rem; }
+.contact-why li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.contact-why b { min-width: 40px; }
+.contact-why .ok { color: var(--good); font-weight: 500; }
+.contact-why .bad { color: var(--bad); }
+.contact-why .fair { color: var(--fair); }
+
+/* Which signals feed the score */
+.chips { display: flex; justify-content: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.chip { font-size: 0.78rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.chip.on { color: var(--good); border-color: var(--good); background: rgba(31, 157, 107, 0.08); }
+.chip.wait { color: var(--fair); border-color: var(--fair); }
+.chip.off { text-decoration: line-through; opacity: 0.7; }
+
+/* Calibration steps and report */
+.steps { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.step { font-size: 0.8rem; font-weight: 600; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.step.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+.step.done { color: var(--good); border-color: var(--good); }
+.report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.sig-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+.sig-card h3 { margin: 0 0 4px; font-size: 1rem; }
+.sig-card .vals { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 6px 0; }
+.sig-card .verdict { font-weight: 600; }
+.sig-card .verdict.used { color: var(--good); }
+.sig-card .verdict.unused { color: var(--bad); }
+
 /* Gauge */
 .gauge { display: flex; justify-content: center; }
 .gauge svg { width: 190px; height: auto; overflow: visible; }

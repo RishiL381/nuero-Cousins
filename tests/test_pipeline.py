@@ -51,17 +51,19 @@ def simulate(phases):
 
 
 def test_stress_score_follows_phases():
-    out, eng = simulate([("calibration", 60), ("round1", 60), ("reset", 60), ("round2", 60)])
-    b = eng.model.baseline
-    assert b is not None and b.eeg_mu is not None and b.hr_mu is not None, b
+    out, eng = simulate([("calib_rest", 60), ("calib_stress", 60), ("round1", 60), ("reset", 60), ("round2", 60)])
+    cal = eng.model.calibration
+    assert cal is not None and cal["mode"] == "anchored", cal
+    assert set(cal["used"]) == {"eeg", "hr"}, cal  # both signals respond in the simulation
+    print("calibration:", {k: (v["note"], round(v["effect"], 2)) for k, v in cal["signals"].items()})
 
     def late_mean(phase):  # last 30 s of each phase, after the smoothing has settled
         vals = [m["stress"] for m in out[phase][-60:] if m["stress"] is not None]
         return float(np.mean(vals))
 
     r1, rs, r2 = late_mean("round1"), late_mean("reset"), late_mean("round2")
-    print(f"stress  round1={r1:.1f}  reset={rs:.1f}  round2={r2:.1f}")
-    assert r1 > 62 and rs < 50 and rs < r2 < r1
+    print(f"stress (0 = your calm, 100 = your stress test)  round1={r1:.1f}  reset={rs:.1f}  round2={r2:.1f}")
+    assert r1 > 60 and rs < 25 and rs < r2 < r1
 
     hr = [m["hr"]["bpm"] for m in out["round1"][-20:] if m["hr"]["bpm"]]
     print(f"heart rate round1 ~{np.mean(hr):.0f} bpm (simulated ~73)")
@@ -71,7 +73,14 @@ def test_stress_score_follows_phases():
     assert all(c["q"] != "bad" for c in contact.values()), contact
 
 
+def test_rest_only_calibration_is_flagged_low_confidence():
+    _, eng = simulate([("calib_rest", 30), ("round1", 2)])
+    cal = eng.model.calibration
+    assert cal["mode"] == "rest_only" and cal["confidence"] == "low" and cal["used"] == [], cal
+
+
 if __name__ == "__main__":
+    test_rest_only_calibration_is_flagged_low_confidence()
     test_alpha_feature_tracks_relaxation()
     test_heart_rate_on_clean_pulse()
     test_stress_score_follows_phases()

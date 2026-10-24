@@ -41,7 +41,17 @@
       <div class="grid">
         <div class="card">
           <h2>Headset</h2>
+          <div class="hs" id="hs-box" hidden>
+            <div class="hs-status"><span class="hs-dot" id="hs-dot"></span><span id="hs-text">Not connected</span></div>
+            <div class="hs-controls">
+              <input id="hs-name" type="text" placeholder="Muse name (optional), e.g. Muse-3724" autocomplete="off">
+              <button id="hs-connect" class="primary">Connect</button>
+              <button id="hs-disconnect">Disconnect</button>
+            </div>
+            <p class="hs-log" id="hs-log"></p>
+          </div>
           <div class="head-wrap" id="head-diagram"></div>
+          <ul class="contact-why" id="contact-why"></ul>
           <dl class="stats">
             <dt>Source</dt><dd id="source-label">—</dd>
             <dt>Heart rate</dt><dd data-live="hr">—</dd>
@@ -55,6 +65,7 @@
         <div class="card center">
           <h2>Live stress</h2>
           <div class="gauge" data-size="lg"></div>
+          <div class="chips" id="signal-chips"></div>
           <p class="muted small" id="calib-note">Calibrate to see your stress score.</p>
           <canvas id="chart-setup" class="chart" aria-label="Signal over the last two minutes"></canvas>
         </div>
@@ -64,7 +75,7 @@
           <canvas id="sea-preview" class="sea-preview" aria-label="Boat on the sea, waves follow your stress"></canvas>
           <p class="hint">Calibrate once, then pop the sea out onto your screen. Calm mind, calm water.</p>
           <div class="row">
-            <button id="btn-calibrate">Calibrate (60 s)</button>
+            <button id="btn-calibrate">Calibrate (2.5 min)</button>
             <button id="btn-widget" class="primary">Pop out widget</button>
           </div>
         </div>
@@ -100,18 +111,41 @@
 
     <!-- CALIBRATION -->
     <section id="screen-calibration" class="screen">
-      <div class="center">
-        <h1>Calibration</h1>
-        <p class="lead">Sit still, eyes open on the dot, and relax. This records your personal baseline.</p>
+      <div class="steps">
+        <span class="step" id="step-1">1 · Relax</span>
+        <span class="step" id="step-2">2 · Stress test</span>
+        <span class="step" id="step-3">3 · Your profile</span>
+      </div>
+
+      <div id="calib-rest" class="center">
+        <h1>Relax</h1>
+        <p class="lead">Sit still, eyes open on the dot, breathe normally. This records what <b>calm</b> looks like for you.</p>
         <div class="fixation"></div>
         <div class="progress"><div class="bar" id="calib-bar"></div></div>
         <p class="timer" id="calib-timer"></p>
         <div class="contact small" data-live="contact"></div>
       </div>
-      <div id="calib-fail" class="card warn" hidden>
-        <p><b>Calibration failed:</b> not enough clean signal. Check that the dots are green, then retry.</p>
-        <button id="calib-retry" class="primary">Retry</button>
-        <button id="calib-skip">Continue without stress score</button>
+
+      <div id="calib-stress" class="center" hidden>
+        <h1>Stress test</h1>
+        <p class="lead">Count backwards from <b>1022</b> in steps of <b>13</b>, as fast as you can. Type each number and press Enter.
+          A mistake sends you back to 1022. This records what <b>stress</b> looks like for you.</p>
+        <div class="big-timer" id="sub-timer">90</div>
+        <div class="problem" id="sub-prompt">1022 − 13 = ?</div>
+        <input id="sub-answer" class="answer" type="text" inputmode="numeric" autocomplete="off" placeholder="Next number, then Enter">
+        <div class="feedback" id="sub-feedback"></div>
+        <div class="contact small" data-live="contact"></div>
+      </div>
+
+      <div id="calib-report" hidden>
+        <h1>Your stress profile</h1>
+        <p class="lead" id="report-lead"></p>
+        <div class="report-grid" id="report-signals"></div>
+        <p class="insight" id="report-summary"></p>
+        <div class="row">
+          <button id="calib-continue" class="primary">Continue</button>
+          <button id="calib-retry">Redo calibration</button>
+        </div>
       </div>
     </section>
 

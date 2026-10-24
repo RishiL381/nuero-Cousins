@@ -62,8 +62,9 @@ def create_app(engine: Engine) -> FastAPI:
         src = engine.source
         await ws.send_text(json.dumps({
             "type": "hello", "source": src.kind, "eeg_names": list(src.eeg_names),
-            "has_ppg": bool(src.ppg_fs), "calibrated": engine.model.baseline is not None,
-            "baseline": engine.model.baseline.as_dict() if engine.model.baseline else None,
+            "has_ppg": bool(src.ppg_fs), "calibrated": engine.model.calibration is not None,
+            "headset_control": hasattr(src, "headset"), "default_name": getattr(getattr(src, "headset", None), "name", ""),
+            "baseline": engine.model.calibration,
         }))
         try:
             while True:
@@ -78,6 +79,10 @@ def create_app(engine: Engine) -> FastAPI:
                     engine.logger.event(engine.now(), engine.phase, msg.get("name", "event"), msg.get("data", {}))
                 elif kind == "session_end":
                     engine.logger.finish(msg.get("summary", {}))
+                elif kind == "headset_connect" and hasattr(src, "headset"):
+                    src.headset.connect(msg.get("name"))
+                elif kind == "headset_disconnect" and hasattr(src, "headset"):
+                    src.headset.disconnect()
                 elif kind == "mock_stress" and isinstance(src, MockSource):
                     src.set_stress(msg.get("value"))
         except WebSocketDisconnect:
@@ -92,8 +97,8 @@ def create_app(engine: Engine) -> FastAPI:
 def main(argv=None):
     p = argparse.ArgumentParser(description="Clutch: stress-aware performance trainer")
     p.add_argument("--source", choices=["muselsl", "lsl", "brainflow", "mock"], default="muselsl",
-                   help="muselsl: start muselsl and read its LSL streams (default); "
-                        "lsl: read streams from a muselsl already running in another terminal; "
+                   help="muselsl: connect the Muse at launch (default); "
+                        "lsl: connect from the web app (Connect button) or use a muselsl started elsewhere; "
                         "brainflow: connect with BrainFlow instead; mock: simulated headset")
     p.add_argument("--name", "--serial-number", dest="name", default="",
                    help="Muse name shown in Bluetooth, e.g. Muse-4A2B (picks your headset in a busy room)")
@@ -106,7 +111,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     if args.source in ("muselsl", "lsl"):
-        source = LslSource(args.name, start_muselsl=args.source == "muselsl")
+        source = LslSource(args.name, autoconnect=args.source == "muselsl")
     elif args.source == "brainflow":
         source = MuseSource(args.board, args.name, args.mac_address, args.ppg_preset)
     else:

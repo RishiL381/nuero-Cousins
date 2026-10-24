@@ -65,9 +65,9 @@ def main():
     if args.source == "brainflow":
         src = MuseSource(args.board, args.name, "", args.ppg_preset)
     else:
-        src = LslSource(args.name, start_muselsl=args.source == "muselsl")
+        src = LslSource(args.name, autoconnect=args.source == "muselsl")
     t0 = time.time()
-    src.start()
+    src.start(block=True) if isinstance(src, LslSource) else src.start()
     print(f"Streaming after {time.time() - t0:.1f} s")
 
     try:

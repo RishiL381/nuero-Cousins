@@ -4,20 +4,23 @@
 const qs = new URLSearchParams(location.search);
 const QUICK = qs.has("quick"); // ?quick -> short durations for testing
 const DUR = QUICK
-  ? { calibration: 12, warmup: 10, round: 25, reset: 20 }
-  : { calibration: 60, warmup: 30, round: 90, reset: 90 };
+  ? { calRest: 12, calStress: 20, warmup: 10, round: 25, reset: 20 }
+  : { calRest: 60, calStress: 90, warmup: 30, round: 90, reset: 90 };
 const PER_PROBLEM_S = 6;  // time limit per arithmetic problem under pressure
 const BREATH_HALF_S = 5;  // 5 s in + 5 s out = 6 breaths per minute
-const PHASE_COLORS = { calibration: "#8a96a3", warmup: "#b9a77e", round1: "#d14b3b", reset: "#1f9d6b", round2: "#2563a6" };
+const SUB_START = 1022, SUB_STEP = 13; // serial subtraction stressor (Trier Social Stress Test style)
+const PHASE_COLORS = { calib_rest: "#8a96a3", calib_stress: "#e08a3c", warmup: "#b9a77e", round1: "#d14b3b", reset: "#1f9d6b", round2: "#2563a6" };
 const PHASE_NAMES = {
-  idle: "", calibration: "Calibration", calibration_check: "Calibration", ready: "Get ready",
-  warmup: "Warm-up", round1: "Round 1", reset: "Reset", round2: "Round 2", results: "Results",
+  idle: "", calib_rest: "Calibration: relax", calib_stress: "Calibration: stress test", calibration_check: "Calibration",
+  ready: "Get ready", warmup: "Warm-up", round1: "Round 1", reset: "Reset", round2: "Round 2", results: "Results",
 };
+// Score scale: 0 = your calm (rest calibration), 100 = your stress (stress-test calibration)
 const STRESS_BINS = [
-  { key: "calm", label: "Calm", range: "< 45", lo: -Infinity, hi: 45 },
-  { key: "mid", label: "Moderate", range: "45–65", lo: 45, hi: 65 },
+  { key: "calm", label: "Calm", range: "< 35", lo: -Infinity, hi: 35 },
+  { key: "mid", label: "Moderate", range: "35–65", lo: 35, hi: 65 },
   { key: "high", label: "High stress", range: "65+", lo: 65, hi: Infinity },
 ];
+const SIGNAL_NAMES = { eeg: "Brain", hr: "Heart" };
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -53,6 +56,8 @@ const handlers = {
     if (m.baseline) state.baseline = m.baseline;
     $("source-label").textContent = m.source === "mock" ? "Simulated headset" : "Muse (live)";
     if (m.source === "mock" && qs.has("debug")) $("debug").hidden = false;
+    $("hs-box").hidden = !m.headset_control;
+    if (m.default_name && !$("hs-name").value) $("hs-name").value = m.default_name;
     buildHead(m.eeg_names);
   },
   baseline(m) {
@@ -75,11 +80,11 @@ const handlers = {
 };
 
 // ---------- Stress colours and labels ----------
-function stressHue(v) { return clamp(145 - (v - 40) * 3.6, 0, 145); } // green -> amber -> red
+function stressHue(v) { return clamp(145 - (v - 15) * 2.2, 0, 145); } // green -> amber -> red
 function stressColor(v, l = 46) { return v == null ? "var(--muted)" : `hsl(${stressHue(v)}, 62%, ${l}%)`; }
 function stressLabel(v) {
-  if (v == null) return "not calibrated";
-  return v < 45 ? "calm" : v < 58 ? "neutral" : v < 72 ? "tense" : "very tense";
+  if (v == null) return state.latest && state.latest.calibrated ? "no clean signal" : "not calibrated";
+  return v < 30 ? "calm" : v < 55 ? "neutral" : v < 75 ? "tense" : "very tense";
 }
 
 // ---------- Gauge ----------
@@ -118,8 +123,34 @@ function buildHead(names) {
     <ellipse class="skull" cx="60" cy="72" rx="46" ry="54"/>${dots}</svg>`;
 }
 
+// ---------- Headset connection ----------
+function updateHeadset(src) {
+  const hs = src && src.headset;
+  if (!hs) return;
+  let cls, text;
+  if (src.connected) {
+    cls = "ok";
+    text = (hs.external ? "Streaming (muselsl started outside the app)" : `Streaming from ${hs.device || hs.name || "Muse"}`) + (hs.address ? ` · ${hs.address}` : "");
+  } else if (["searching", "connecting", "retrying"].includes(hs.state) || (hs.state === "streaming" && hs.managed)) {
+    cls = "busy";
+    text = hs.state === "streaming" ? "Connected, waiting for data…" : hs.message;
+  } else if (["not_found", "failed", "disconnected"].includes(hs.state)) {
+    cls = "err"; text = hs.message;
+  } else {
+    cls = ""; text = "Not connected";
+  }
+  $("hs-dot").className = `hs-dot ${cls}`;
+  $("hs-text").textContent = text;
+  $("hs-log").textContent = (hs.log || []).join("\n");
+  const active = hs.managed || hs.want;
+  $("hs-connect").disabled = (active && cls !== "err") || hs.external;
+  $("hs-connect").textContent = cls === "err" || hs.state === "idle" && hs.attempts ? "Reconnect" : "Connect";
+  $("hs-disconnect").disabled = !active;
+}
+
 // ---------- Live widgets ----------
 function updateLive(m, hr) {
+  updateHeadset(m.source);
   const s = m.stress == null ? null : Math.round(m.stress);
   document.querySelectorAll('[data-live="stress"]').forEach((el) => { el.textContent = s ?? "—"; el.style.color = stressColor(s); });
   $("pill-dot").style.background = stressColor(s);
@@ -139,6 +170,23 @@ function updateLive(m, hr) {
     return `<div class="sensor"><div class="dot ${q}" title="${n}: ${q || "no data"}"></div>${n}</div>`;
   }).join("");
   document.querySelectorAll('[data-live="contact"]').forEach((el) => { el.innerHTML = dots; });
+
+  // Why each sensor is red/orange, in plain words
+  const issues = names.filter((n) => chans[n] && chans[n].q !== "good");
+  $("contact-why").innerHTML = !Object.keys(chans).length ? "<li class='muted'>Waiting for EEG data…</li>"
+    : !issues.length ? "<li class='ok'>All four sensors in good contact</li>"
+    : issues.map((n) => `<li class="${chans[n].q}"><b>${n}</b>${chans[n].why || chans[n].q}</li>`).join("");
+
+  // Which signals are feeding the score right now
+  const cal = state.baseline;
+  $("signal-chips").innerHTML = !m.calibrated || !cal ? "" : Object.entries(SIGNAL_NAMES).map(([k, label]) => {
+    const used = cal.mode === "anchored" ? cal.used.includes(k) : cal.signals[k] && cal.signals[k].rest != null;
+    const live = (m.used || []).includes(k);
+    const cls = !used ? "off" : live ? "on" : "wait";
+    const tip = !used ? `${label}: not used (${cal.signals[k] ? cal.signals[k].note : "no data"} during calibration)`
+      : live ? `${label}: feeding the score now` : `${label}: used, but no clean signal right now`;
+    return `<span class="chip ${cls}" title="${tip}">${label} ${!used ? "✗" : live ? "✓" : "…"}</span>`;
+  }).join("");
 
   $("calib-note").hidden = !!m.calibrated;
   const err = $("engine-error");
@@ -240,7 +288,7 @@ function drawBars(canvas, bins) {
   }
   const slot = (w - padL - 8) / bins.length;
   const bw = Math.min(70, slot * 0.5);
-  const mid = [35, 55, 80];
+  const mid = [15, 50, 85]; // colour of each bin on the 0-100 scale
   bins.forEach((b, i) => {
     const cx = padL + slot * (i + 0.5);
     ctx.textAlign = "center";
@@ -442,26 +490,117 @@ function waitBaseline(timeoutMs) {
     }, timeoutMs);
   });
 }
+function calibStep(n) {
+  [1, 2, 3].forEach((i) => {
+    $(`step-${i}`).className = "step" + (i === n ? " active" : i < n ? " done" : "");
+  });
+  $("calib-rest").hidden = n !== 1;
+  $("calib-stress").hidden = n !== 2;
+  $("calib-report").hidden = n !== 3;
+}
+
+// Step 2: serial subtraction under time pressure. A mistake restarts from 1022.
+async function serialSubtraction(seconds) {
+  const input = $("sub-answer"), fb = $("sub-feedback");
+  let expected = SUB_START - SUB_STEP, streak = 0, best = 0, shownAt = performance.now();
+  $("sub-prompt").textContent = `${SUB_START} − ${SUB_STEP} = ?`;
+  fb.textContent = ""; input.value = ""; input.disabled = false; input.focus();
+  input.onkeydown = (e) => {
+    if (e.key !== "Enter" || input.value.trim() === "") return;
+    const given = Number(input.value.trim());
+    const ok = given === expected;
+    send({ type: "event", name: "calib_answer", data: { expected, given, correct: ok,
+      rt: +((performance.now() - shownAt) / 1000).toFixed(3), stress: state.latest ? state.latest.stress : null } });
+    input.value = ""; shownAt = performance.now();
+    if (ok) {
+      streak++; best = Math.max(best, streak); expected -= SUB_STEP;
+      fb.className = "feedback ok"; fb.textContent = `✓ ${streak} in a row`;
+      $("sub-prompt").textContent = `… − ${SUB_STEP} = ?`; // no running total shown: you must keep track
+      sfx.right();
+    } else {
+      streak = 0; expected = SUB_START - SUB_STEP;
+      fb.className = "feedback ko"; fb.textContent = `Wrong. Start again from ${SUB_START}.`;
+      $("sub-prompt").textContent = `${SUB_START} − ${SUB_STEP} = ?`;
+      sfx.wrong();
+      document.body.classList.remove("flash-bad"); void document.body.offsetWidth; document.body.classList.add("flash-bad");
+    }
+  };
+  let lastWhole = null;
+  await countdown(seconds, (rem) => {
+    const whole = Math.ceil(rem);
+    $("sub-timer").textContent = whole;
+    $("sub-timer").classList.toggle("urgent", rem <= 10);
+    if (rem > 0 && whole !== lastWhole) { lastWhole = whole; rem <= 10 ? sfx.tickUrgent() : sfx.tick(); }
+  });
+  input.onkeydown = null; input.disabled = true;
+  return best;
+}
+
+function renderCalibrationReport(cal) {
+  const sig = (cal && cal.signals) || {};
+  const card = (key, title, fmt, unit) => {
+    const s = sig[key] || {};
+    const used = cal && cal.used.includes(key);
+    let vals = "—", change = "";
+    if (s.rest != null && s.stress != null) {
+      vals = `${fmt(s.rest)} → ${fmt(s.stress)}${unit}`;
+      change = key === "eeg"
+        ? `Alpha/beta ratio ${s.stress < s.rest ? "dropped" : "rose"} ${Math.abs(Math.round((Math.pow(10, s.stress - s.rest) - 1) * 100))}% under stress`
+        : `${s.stress > s.rest ? "+" : ""}${Math.round(s.stress) - Math.round(s.rest)} bpm under stress`;
+    } else if (s.rest != null) {
+      vals = `${fmt(s.rest)}${unit} at rest`;
+    }
+    return `<div class="sig-card"><h3>${title}</h3><div class="muted small">rest → stress test</div>
+      <div class="vals">${vals}</div><div class="muted small">${change}</div>
+      <p class="verdict ${used ? "used" : "unused"}">${used ? "✓ Used" : "✗ Not used"}: ${s.note || "no data"}
+      ${s.effect != null ? `<span class="muted">(effect size ${s.effect.toFixed(2)})</span>` : ""}</p></div>`;
+  };
+  $("report-signals").innerHTML =
+    card("eeg", "Brain · alpha/beta ratio", (v) => Math.pow(10, v).toFixed(2), "") +
+    card("hr", "Heart rate", (v) => Math.round(v), " bpm");
+
+  let lead, summary;
+  if (!cal || !cal.ok) {
+    lead = "Calibration failed: no clean signal from the headset.";
+    summary = "Check that the sensors are green (bar flat on the forehead, rubber tips on the skin behind the ears), then redo the calibration.";
+  } else if (cal.confidence === "low") {
+    lead = "Neither signal reacted clearly to the stress test.";
+    summary = "The score will only show how far you are from your calm state, so treat it as rough. Better contact or a harder test usually fixes this: redo the calibration if you can.";
+  } else {
+    const names = cal.used.map((k) => SIGNAL_NAMES[k].toLowerCase()).join(" and ");
+    lead = `Your ${names} reacted to stress: the score is personalised to you.`;
+    summary = "From now on, 0 means as calm as you were at rest and 100 means as stressed as during the test. Signals that did not react are left out.";
+  }
+  $("report-lead").textContent = lead;
+  $("report-summary").textContent = summary;
+  $("calib-continue").disabled = !(cal && cal.ok);
+}
+
 async function calibrate() {
   for (;;) {
     show("calibration");
-    $("calib-fail").hidden = true;
-    setPhase("calibration");
-    await countdown(DUR.calibration, (rem, tot) => {
+    calibStep(1);
+    setPhase("calib_rest");
+    await countdown(DUR.calRest, (rem, tot) => {
       $("calib-bar").style.width = `${100 * (1 - rem / tot)}%`;
       $("calib-timer").textContent = `${Math.ceil(rem)} s`;
     });
+    sfx.done();
+    calibStep(2);
+    setPhase("calib_stress");
+    const best = await serialSubtraction(DUR.calStress);
     const waiting = waitBaseline(4000);
     setPhase("calibration_check");
-    const b = await waiting;
-    send({ type: "event", name: "calibration", data: b || {} });
-    if (b && (b.eeg_mu != null || b.hr_mu != null)) { sfx.done(); return true; }
-    $("calib-fail").hidden = false;
+    const cal = await waiting;
+    send({ type: "event", name: "calibration", data: { ...(cal || {}), best_streak: best } });
+    calibStep(3);
+    renderCalibrationReport(cal);
+    sfx.done();
     const choice = await new Promise((r) => {
+      $("calib-continue").onclick = () => r("continue");
       $("calib-retry").onclick = () => r("retry");
-      $("calib-skip").onclick = () => r("skip");
     });
-    if (choice === "skip") return false;
+    if (choice === "continue") return true;
   }
 }
 async function calibrateOnly() {
@@ -602,7 +741,7 @@ function showResults() {
   send({ type: "session_end", summary: {
     participant: s.participant, condition: s.condition, started_at: s.startedAt, quick: QUICK,
     rounds: { warmup: strip(s.rounds.warmup), round1: strip(r1), round2: strip(r2) },
-    phases: { round1: p1, reset: pr, round2: p2, calibration: phaseStats("calibration") },
+    phases: { round1: p1, reset: pr, round2: p2, calib_rest: phaseStats("calib_rest"), calib_stress: phaseStats("calib_stress") },
     stress_vs_performance: bins.map(({ key, n, accuracy, rt }) => ({ bin: key, n, accuracy, rt })),
     baseline: state.baseline } });
   s.recording = false;
@@ -617,8 +756,10 @@ async function runSession() {
   const condition = $("condition").value;
   state.session = { participant, condition, rounds: {}, startedAt: new Date().toISOString(), recording: true, dir: null };
   state.history = [];
-  send({ type: "session_start", meta: { participant, condition, durations: DUR, quick: QUICK, started_at: state.session.startedAt } });
-  await calibrate();
+  send({ type: "session_start", meta: { participant, condition, durations: DUR, quick: QUICK, started_at: state.session.startedAt,
+    reused_calibration: !!(state.baseline && state.baseline.ok) } });
+  // Reuse the calibration done from the home screen; otherwise calibrate now.
+  if (!(state.baseline && state.baseline.ok)) await calibrate();
   await runTask("warmup");
   await runTask("round1");
   await runReset(condition);
@@ -661,13 +802,17 @@ state.scenes.preview = new BoatScene($("sea-preview"));
 state.scenes.preview.start();
 
 $("btn-start").onclick = () => runSession();
+$("hs-connect").onclick = () => send({ type: "headset_connect", name: $("hs-name").value.trim() });
+$("hs-disconnect").onclick = () => send({ type: "headset_disconnect" });
+$("hs-name").onkeydown = (e) => { if (e.key === "Enter") $("hs-connect").click(); };
 $("btn-calibrate").onclick = () => calibrateOnly();
 $("btn-widget").onclick = () => openWidget();
 $("btn-widget-2").onclick = () => openWidget();
 $("btn-new").onclick = () => { state.session = null; setPhase("idle"); show("setup"); };
 $("durations").textContent =
-  `Calibrate, solve mental math under time pressure, reset, then solve again. ` +
-  `About ${Math.round((DUR.calibration + DUR.warmup + 2 * DUR.round + DUR.reset) / 60 + 0.5)} minutes.` +
+  `Solve mental math under time pressure, reset, then solve again. Uses your calibration if you already did one ` +
+  `(about ${Math.round((DUR.warmup + 2 * DUR.round + DUR.reset) / 60 + 0.5)} min), otherwise calibrates first ` +
+  `(+${Math.round((DUR.calRest + DUR.calStress) / 60 * 2) / 2} min).` +
   (QUICK ? " (quick test mode)" : "");
 
 $("mock-stress").oninput = (e) => {

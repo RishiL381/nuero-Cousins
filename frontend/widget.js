@@ -7,7 +7,7 @@
  *
  *   const scene = new BoatScene(canvas);
  *   scene.start();            // or scene.start(otherWindow) to animate in a popup / PiP window
- *   scene.setStress(62);      // 0-100 score, 50 = personal baseline; null = no signal yet
+ *   scene.setStress(62);      // 0-100 score: 0 = your calm, 100 = your stress test; null = no signal yet
  */
 (function () {
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -46,7 +46,7 @@
     /** score: 0-100 stress (50 = baseline) or null when not calibrated / no signal. */
     setStress(score, message) {
       this.score = score == null ? null : clamp(score, 0, 100);
-      if (this.score != null) this.target = clamp((this.score - 30) / 60, 0, 1); // 30 -> glassy, 90 -> storm
+      if (this.score != null) this.target = clamp((this.score - 5) / 85, 0, 1); // 0 = your calm -> glassy, 90+ -> storm
       if (message !== undefined) this.message = message;
     }
 
@@ -311,7 +311,7 @@
       if (this.score == null) text = this.message;
       else {
         const s = Math.round(this.score);
-        const label = s < 45 ? "Calm sea" : s < 58 ? "Gentle swell" : s < 72 ? "Rough sea" : "Storm"; // same bands as the gauge
+        const label = s < 30 ? "Calm sea" : s < 55 ? "Gentle swell" : s < 75 ? "Rough sea" : "Storm"; // same bands as the gauge
         text = `${label} · ${s}`;
       }
       const pad = fs * 0.6, tw = ctx.measureText(text).width;

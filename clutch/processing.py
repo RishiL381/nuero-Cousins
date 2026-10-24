@@ -52,13 +52,28 @@ def channel_quality(eeg_raw: np.ndarray, eeg_filt: np.ndarray, fs: float, notch_
         std = float(np.std(eeg_filt[i]))
         ptp = float(np.ptp(eeg_filt[i]))
         line_ratio = float(line[i] / brain[i])
-        if std < 0.5 or std > 100 or ptp > 800 or line_ratio > 2.0:
+        saturated = float(np.mean(np.abs(eeg_raw[i]) >= 990))  # Muse range is about +-1000 uV
+        if std < 0.5 or std > 100 or ptp > 800 or line_ratio > 2.0 or saturated > 0.01:
             q = "bad"
         elif std > 45 or ptp > 400 or line_ratio > 0.5:
             q = "fair"
         else:
             q = "good"
-        out.append({"q": q, "std": round(std, 1), "ptp": round(ptp, 1), "line": round(line_ratio, 2)})
+        # Plain-language reason, most specific first
+        if std < 0.5:
+            why = "flat: no signal"
+        elif saturated > 0.01:
+            why = "saturating: not touching skin"
+        elif line_ratio > 0.5:
+            why = "electrical noise: not touching skin"
+        elif q == "bad":
+            why = "signal far too large: loose contact or moving"
+        elif q == "fair":
+            why = "borderline: press it on, keep still"
+        else:
+            why = "good contact"
+        out.append({"q": q, "std": round(std, 1), "ptp": round(ptp, 1), "line": round(line_ratio, 2),
+                    "sat": round(saturated, 3), "why": why})
     return out
 
 
