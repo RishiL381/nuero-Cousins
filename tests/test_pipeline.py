@@ -51,11 +51,12 @@ def simulate(phases):
 
 
 def test_stress_score_follows_phases():
-    out, eng = simulate([("calib_rest", 60), ("calib_stress", 60), ("round1", 60), ("reset", 60), ("round2", 60)])
+    out, eng = simulate([("calib_rest", 60), ("calib_stress", 60), ("calib_recovery", 30), ("calibration_check", 1),
+                         ("round1", 60), ("reset", 60), ("round2", 60)])
     cal = eng.model.calibration
     assert cal is not None and cal["mode"] == "anchored", cal
     assert set(cal["used"]) == {"eeg", "hr"}, cal  # both signals respond in the simulation
-    print("calibration:", {k: (v["note"], round(v["effect"], 2)) for k, v in cal["signals"].items()})
+    print("calibration:", {k: (v["note"], round(v["effect"], 2), v.get("recovered_pct")) for k, v in cal["signals"].items()})
 
     def late_mean(phase):  # last 30 s of each phase, after the smoothing has settled
         vals = [m["stress"] for m in out[phase][-60:] if m["stress"] is not None]
@@ -74,7 +75,7 @@ def test_stress_score_follows_phases():
 
 
 def test_rest_only_calibration_is_flagged_low_confidence():
-    _, eng = simulate([("calib_rest", 30), ("round1", 2)])
+    _, eng = simulate([("calib_rest", 30), ("calibration_check", 1)])
     cal = eng.model.calibration
     assert cal["mode"] == "rest_only" and cal["confidence"] == "low" and cal["used"] == [], cal
 

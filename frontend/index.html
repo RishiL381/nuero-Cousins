@@ -74,8 +74,14 @@
           <h2>Sea widget</h2>
           <canvas id="sea-preview" class="sea-preview" aria-label="Boat on the sea, waves follow your stress"></canvas>
           <p class="hint">Calibrate once, then pop the sea out onto your screen. Calm mind, calm water.</p>
+          <label>Calibration protocol
+            <select id="protocol">
+              <option value="standard">Standard: baseline 3 min, stress 3 min, recovery 2 min (recommended)</option>
+              <option value="short">Short: baseline 1 min, stress 1.5 min (demo)</option>
+            </select>
+          </label>
           <div class="row">
-            <button id="btn-calibrate">Calibrate (2.5 min)</button>
+            <button id="btn-calibrate">Calibrate</button>
             <button id="btn-widget" class="primary">Pop out widget</button>
           </div>
         </div>
@@ -109,39 +115,72 @@
       </div>
     </section>
 
-    <!-- CALIBRATION -->
+    <!-- CALIBRATION (protocol and references: docs/methods.md) -->
     <section id="screen-calibration" class="screen">
-      <div class="steps">
-        <span class="step" id="step-1">1 · Relax</span>
-        <span class="step" id="step-2">2 · Stress test</span>
-        <span class="step" id="step-3">3 · Your profile</span>
-      </div>
+      <div class="steps" id="calib-steps"></div>
 
-      <div id="calib-rest" class="center">
-        <h1>Relax</h1>
-        <p class="lead">Sit still, eyes open on the dot, breathe normally. This records what <b>calm</b> looks like for you.</p>
-        <div class="fixation"></div>
+      <!-- Baseline: low-demand "vanilla" task (Jennings et al., 1992), eyes open -->
+      <div id="calib-rest" class="center calib-part" hidden>
+        <h1>Baseline</h1>
+        <p class="lead">Sit comfortably and keep your eyes on the circle. Press <b>Space</b> each time it turns
+          <b class="blue-word">blue</b>. Nothing else to do: this records what <b>calm</b> looks like for you.</p>
+        <div class="vanilla-wrap"><div class="vanilla" id="vanilla"></div></div>
         <div class="progress"><div class="bar" id="calib-bar"></div></div>
         <p class="timer" id="calib-timer"></p>
         <div class="contact small" data-live="contact"></div>
       </div>
 
-      <div id="calib-stress" class="center" hidden>
+      <!-- Self-report: STAI-6 (Marteau & Bekker, 1992) -->
+      <div id="calib-survey" class="calib-part" hidden>
+        <h1>How do you feel right now?</h1>
+        <p class="lead">Answer quickly, about this very moment. There are no right or wrong answers.</p>
+        <form id="stai-form" class="stai"></form>
+        <button id="stai-submit" class="primary" disabled>Continue</button>
+      </div>
+
+      <!-- Stressor: TSST serial subtraction (Kirschbaum et al., 1993) with MIST time pressure and
+           social comparison (Dedovic et al., 2005) -->
+      <div id="calib-stress" class="center calib-part" hidden>
         <h1>Stress test</h1>
-        <p class="lead">Count backwards from <b>1022</b> in steps of <b>13</b>, as fast as you can. Type each number and press Enter.
-          A mistake sends you back to 1022. This records what <b>stress</b> looks like for you.</p>
-        <div class="big-timer" id="sub-timer">90</div>
+        <p class="lead">Count backwards from <b>1022</b> in steps of <b>13</b>, as fast as you can. Type each number and
+          press Enter. A mistake or running out of time sends you back to 1022.</p>
+        <div class="big-timer" id="sub-timer">180</div>
         <div class="problem" id="sub-prompt">1022 − 13 = ?</div>
         <input id="sub-answer" class="answer" type="text" inputmode="numeric" autocomplete="off" placeholder="Next number, then Enter">
+        <div class="progress thin"><div class="bar" id="sub-limit-bar"></div></div>
         <div class="feedback" id="sub-feedback"></div>
+        <div class="compare">
+          <div class="cmp-row"><span>You</span><div class="cmp-track"><div class="cmp-bar you" id="cmp-you"></div></div><b id="cmp-you-val">0%</b></div>
+          <div class="cmp-row"><span>Average participant</span><div class="cmp-track"><div class="cmp-bar avg" id="cmp-avg"></div></div><b id="cmp-avg-val">0%</b></div>
+        </div>
         <div class="contact small" data-live="contact"></div>
       </div>
 
-      <div id="calib-report" hidden>
+      <!-- Recovery: quiet rest after the stressor -->
+      <div id="calib-recovery" class="center calib-part" hidden>
+        <h1>Recovery</h1>
+        <p class="lead">The test is over. Sit quietly, eyes open on the dot, and let your body settle.</p>
+        <div class="fixation"></div>
+        <div class="progress"><div class="bar" id="rec-bar"></div></div>
+        <p class="timer" id="rec-timer"></p>
+      </div>
+
+      <div id="calib-report" class="calib-part" hidden>
         <h1>Your stress profile</h1>
         <p class="lead" id="report-lead"></p>
         <div class="report-grid" id="report-signals"></div>
         <p class="insight" id="report-summary"></p>
+        <p class="hint" id="report-debrief"></p>
+        <details class="refs">
+          <summary>Method and references</summary>
+          <p>Baseline: low-demand "vanilla" task with eyes open (Jennings et al., 1992; Barry et al., 2007).
+            Stressor: serial subtraction from the Trier Social Stress Test (Kirschbaum et al., 1993) with the time
+            pressure and social comparison of the Montreal Imaging Stress Task (Dedovic et al., 2005); uncontrollable,
+            socially evaluated tasks give the strongest stress responses (Dickerson &amp; Kemeny, 2004). Self-report:
+            six-item STAI (Marteau &amp; Bekker, 1992). Signal selection: Cohen's d &ge; 0.5 (Cohen, 1988).
+            EEG band power: Welch (1967); alpha and cognitive state: Klimesch (1999); Muse validity: Krigolson et al. (2017).
+            Full list: docs/methods.md.</p>
+        </details>
         <div class="row">
           <button id="calib-continue" class="primary">Continue</button>
           <button id="calib-retry">Redo calibration</button>

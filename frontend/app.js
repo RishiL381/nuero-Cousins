@@ -4,14 +4,19 @@
 const qs = new URLSearchParams(location.search);
 const QUICK = qs.has("quick"); // ?quick -> short durations for testing
 const DUR = QUICK
-  ? { calRest: 12, calStress: 20, warmup: 10, round: 25, reset: 20 }
-  : { calRest: 60, calStress: 90, warmup: 30, round: 90, reset: 90 };
+  ? { warmup: 10, round: 25, reset: 20 }
+  : { warmup: 30, round: 90, reset: 90 };
+// Calibration protocols, in seconds (see docs/methods.md)
+const PROTOCOLS = QUICK
+  ? { standard: { rest: 15, stress: 25, recovery: 10 }, short: { rest: 10, stress: 15, recovery: 0 } }
+  : { standard: { rest: 180, stress: 180, recovery: 120 }, short: { rest: 60, stress: 90, recovery: 0 } };
 const PER_PROBLEM_S = 6;  // time limit per arithmetic problem under pressure
 const BREATH_HALF_S = 5;  // 5 s in + 5 s out = 6 breaths per minute
 const SUB_START = 1022, SUB_STEP = 13; // serial subtraction stressor (Trier Social Stress Test style)
-const PHASE_COLORS = { calib_rest: "#8a96a3", calib_stress: "#e08a3c", warmup: "#b9a77e", round1: "#d14b3b", reset: "#1f9d6b", round2: "#2563a6" };
+const PHASE_COLORS = { calib_rest: "#8a96a3", calib_stress: "#e08a3c", calib_recovery: "#7fb3a0", warmup: "#b9a77e", round1: "#d14b3b", reset: "#1f9d6b", round2: "#2563a6" };
 const PHASE_NAMES = {
-  idle: "", calib_rest: "Calibration: relax", calib_stress: "Calibration: stress test", calibration_check: "Calibration",
+  idle: "", calib_rest: "Calibration: baseline", calib_survey: "Calibration: questionnaire", calib_stress: "Calibration: stress test",
+  calib_recovery: "Calibration: recovery", calibration_check: "Calibration",
   ready: "Get ready", warmup: "Warm-up", round1: "Round 1", reset: "Reset", round2: "Round 2", results: "Results",
 };
 // Score scale: 0 = your calm (rest calibration), 100 = your stress (stress-test calibration)
@@ -490,39 +495,127 @@ function waitBaseline(timeoutMs) {
     }, timeoutMs);
   });
 }
-function calibStep(n) {
-  [1, 2, 3].forEach((i) => {
-    $(`step-${i}`).className = "step" + (i === n ? " active" : i < n ? " done" : "");
-  });
-  $("calib-rest").hidden = n !== 1;
-  $("calib-stress").hidden = n !== 2;
-  $("calib-report").hidden = n !== 3;
+// Calibration protocol (methods and references: docs/methods.md)
+function protocol() {
+  const key = $("protocol") ? $("protocol").value : "standard";
+  return { key, ...PROTOCOLS[key] };
+}
+function calibSteps(p) {
+  return [["rest", "Baseline"], ["stress", "Stress test"], ...(p.recovery ? [["recovery", "Recovery"]] : []), ["report", "Your profile"]];
+}
+function calibShow(part, p) {
+  const steps = calibSteps(p);
+  const idx = steps.findIndex(([k]) => k === part);
+  $("calib-steps").innerHTML = steps.map(([k, label], i) =>
+    `<span class="step${i === idx ? " active" : i < idx ? " done" : ""}">${i + 1} · ${label}</span>`).join("");
+  ["rest", "survey", "stress", "recovery", "report"].forEach((k) => { $(`calib-${k}`).hidden = k !== part; });
 }
 
-// Step 2: serial subtraction under time pressure. A mistake restarts from 1022.
+// Baseline: low-demand "vanilla" task (Jennings et al., 1992). Press Space when the circle turns blue.
+async function vanillaBaseline(seconds) {
+  const circle = $("vanilla");
+  const COLORS = ["#9aa5b1", "#3fae7a", "#e0a03c", "#8f6ad9"], BLUE = "#2f6fd6";
+  let isBlue = false, hits = 0, misses = 0, falseAlarms = 0, nextChange = 0, responded = false;
+  const onKey = (e) => {
+    if (e.code !== "Space") return;
+    e.preventDefault();
+    if (isBlue && !responded) { hits++; responded = true; circle.classList.add("hit"); setTimeout(() => circle.classList.remove("hit"), 250); }
+    else if (!isBlue) falseAlarms++;
+  };
+  if (document.activeElement) document.activeElement.blur(); // Space must not press a focused button
+  document.addEventListener("keydown", onKey);
+  await countdown(seconds, (rem, tot) => {
+    $("calib-bar").style.width = `${100 * (1 - rem / tot)}%`;
+    $("calib-timer").textContent = `${Math.ceil(rem)} s`;
+    const el = tot - rem;
+    if (el >= nextChange) {
+      if (isBlue && !responded) misses++;
+      isBlue = Math.random() < 0.2;
+      responded = false;
+      circle.style.background = isBlue ? BLUE : COLORS[Math.floor(Math.random() * COLORS.length)];
+      nextChange = el + 2 + Math.random() * 1.5;
+    }
+  });
+  document.removeEventListener("keydown", onKey);
+  return { hits, misses, false_alarms: falseAlarms };
+}
+
+// Self-report: six-item STAI state scale (Marteau & Bekker, 1992). 1-4 per item, positive items reversed,
+// sum x 20/6 gives the usual 20-80 range.
+const STAI6 = [["calm", "I feel calm", true], ["tense", "I am tense", false], ["upset", "I feel upset", false],
+  ["relaxed", "I am relaxed", true], ["content", "I feel content", true], ["worried", "I am worried", false]];
+const STAI_OPTS = ["Not at all", "Somewhat", "Moderately", "Very much"];
+function staiSurvey(p) {
+  calibShow("survey", p);
+  $("stai-form").innerHTML = STAI6.map(([k, text]) => `<div class="stai-item"><span class="q">${text}</span><div class="stai-opts">` +
+    STAI_OPTS.map((o, i) => `<label><input type="radio" name="${k}" value="${i + 1}">${o}</label>`).join("") + "</div></div>").join("");
+  const form = $("stai-form"), btn = $("stai-submit");
+  btn.disabled = true;
+  form.onchange = () => { btn.disabled = STAI6.some(([k]) => !form.querySelector(`input[name="${k}"]:checked`)); };
+  return new Promise((resolve) => {
+    btn.onclick = () => {
+      const answers = {};
+      let sum = 0;
+      for (const [k, , positive] of STAI6) {
+        const v = Number(form.querySelector(`input[name="${k}"]:checked`).value);
+        answers[k] = v;
+        sum += positive ? 5 - v : v;
+      }
+      resolve({ score: Math.round(sum * 20 / 6), answers });
+    };
+  });
+}
+
+// Stressor: serial subtraction from the TSST (Kirschbaum et al., 1993) with MIST-style pressure
+// (Dedovic et al., 2005): an answer time limit that tightens after each success, and a comparison with
+// an "average participant" who always does better. A mistake or a timeout restarts from 1022.
 async function serialSubtraction(seconds) {
   const input = $("sub-answer"), fb = $("sub-feedback");
-  let expected = SUB_START - SUB_STEP, streak = 0, best = 0, shownAt = performance.now();
+  let expected = SUB_START - SUB_STEP, streak = 0, best = 0, limit = 8, shownAt = performance.now();
+  const recent = [];
+  const stats = { attempts: 0, correct: 0, timeouts: 0 };
+  const updateCompare = () => {
+    const you = recent.length ? Math.round(100 * recent.filter(Boolean).length / recent.length) : 0;
+    const avg = Math.min(95, you + 25);
+    $("cmp-you").style.width = `${you}%`; $("cmp-you-val").textContent = `${you}%`;
+    $("cmp-avg").style.width = `${avg}%`; $("cmp-avg-val").textContent = `${avg}%`;
+  };
+  const restart = (msg) => {
+    streak = 0; expected = SUB_START - SUB_STEP;
+    limit = Math.min(10, limit * 1.1);
+    fb.className = "feedback ko"; fb.textContent = `${msg} Start again from ${SUB_START}.`;
+    $("sub-prompt").textContent = `${SUB_START} − ${SUB_STEP} = ?`;
+    sfx.wrong();
+    document.body.classList.remove("flash-bad"); void document.body.offsetWidth; document.body.classList.add("flash-bad");
+  };
+  const record = (ok, given, timeout) => {
+    stats.attempts++;
+    if (ok) stats.correct++;
+    if (timeout) stats.timeouts++;
+    recent.push(ok); if (recent.length > 10) recent.shift();
+    send({ type: "event", name: "calib_answer", data: { expected, given, correct: ok, timeout,
+      rt: +((performance.now() - shownAt) / 1000).toFixed(3), limit: +limit.toFixed(2),
+      stress: state.latest ? state.latest.stress : null } });
+    shownAt = performance.now();
+    updateCompare();
+  };
   $("sub-prompt").textContent = `${SUB_START} − ${SUB_STEP} = ?`;
   fb.textContent = ""; input.value = ""; input.disabled = false; input.focus();
+  updateCompare();
   input.onkeydown = (e) => {
     if (e.key !== "Enter" || input.value.trim() === "") return;
     const given = Number(input.value.trim());
     const ok = given === expected;
-    send({ type: "event", name: "calib_answer", data: { expected, given, correct: ok,
-      rt: +((performance.now() - shownAt) / 1000).toFixed(3), stress: state.latest ? state.latest.stress : null } });
-    input.value = ""; shownAt = performance.now();
+    input.value = "";
+    record(ok, given, false);
     if (ok) {
       streak++; best = Math.max(best, streak); expected -= SUB_STEP;
+      limit = Math.max(2.5, limit * 0.9);
       fb.className = "feedback ok"; fb.textContent = `✓ ${streak} in a row`;
       $("sub-prompt").textContent = `… − ${SUB_STEP} = ?`; // no running total shown: you must keep track
       sfx.right();
     } else {
-      streak = 0; expected = SUB_START - SUB_STEP;
-      fb.className = "feedback ko"; fb.textContent = `Wrong. Start again from ${SUB_START}.`;
-      $("sub-prompt").textContent = `${SUB_START} − ${SUB_STEP} = ?`;
-      sfx.wrong();
-      document.body.classList.remove("flash-bad"); void document.body.offsetWidth; document.body.classList.add("flash-bad");
+      restart("Wrong.");
     }
   };
   let lastWhole = null;
@@ -531,12 +624,22 @@ async function serialSubtraction(seconds) {
     $("sub-timer").textContent = whole;
     $("sub-timer").classList.toggle("urgent", rem <= 10);
     if (rem > 0 && whole !== lastWhole) { lastWhole = whole; rem <= 10 ? sfx.tickUrgent() : sfx.tick(); }
+    const el = (performance.now() - shownAt) / 1000;
+    $("sub-limit-bar").style.width = `${Math.max(0, 100 * (1 - el / limit))}%`;
+    if (el >= limit && rem > 0) { record(false, null, true); restart("Too slow."); }
   });
   input.onkeydown = null; input.disabled = true;
-  return best;
+  return { ...stats, best_streak: best };
 }
 
-function renderCalibrationReport(cal) {
+async function recoveryRest(seconds) {
+  await countdown(seconds, (rem, tot) => {
+    $("rec-bar").style.width = `${100 * (1 - rem / tot)}%`;
+    $("rec-timer").textContent = `${Math.ceil(rem)} s`;
+  });
+}
+
+function renderCalibrationReport(cal, extra) {
   const sig = (cal && cal.signals) || {};
   const card = (key, title, fmt, unit) => {
     const s = sig[key] || {};
@@ -547,54 +650,81 @@ function renderCalibrationReport(cal) {
       change = key === "eeg"
         ? `Alpha/beta ratio ${s.stress < s.rest ? "dropped" : "rose"} ${Math.abs(Math.round((Math.pow(10, s.stress - s.rest) - 1) * 100))}% under stress`
         : `${s.stress > s.rest ? "+" : ""}${Math.round(s.stress) - Math.round(s.rest)} bpm under stress`;
+      if (s.recovered_pct != null) change += ` · recovered ${Math.max(0, s.recovered_pct)}% toward calm afterwards`;
     } else if (s.rest != null) {
-      vals = `${fmt(s.rest)}${unit} at rest`;
+      vals = `${fmt(s.rest)}${unit} at baseline`;
     }
-    return `<div class="sig-card"><h3>${title}</h3><div class="muted small">rest → stress test</div>
+    return `<div class="sig-card"><h3>${title}</h3><div class="muted small">baseline → stress test</div>
       <div class="vals">${vals}</div><div class="muted small">${change}</div>
-      <p class="verdict ${used ? "used" : "unused"}">${used ? "✓ Used" : "✗ Not used"}: ${s.note || "no data"}
-      ${s.effect != null ? `<span class="muted">(effect size ${s.effect.toFixed(2)})</span>` : ""}</p></div>`;
+      <p class="verdict ${used ? "used" : "unused"}">${used ? "✓ Used" : "✗ Not used"}: ${s.note || "not enough clean signal"}
+      ${s.effect != null ? `<span class="muted">(Cohen's d = ${s.effect.toFixed(2)})</span>` : ""}</p></div>`;
   };
+  // Self-report card: did the test actually feel stressful? (manipulation check)
+  const s1 = extra.stai_before, s2 = extra.stai_after;
+  let selfCard = "";
+  if (s1 && s2) {
+    const d = s2.score - s1.score;
+    const felt = d >= 5 ? "✓ You felt more anxious: the stressor worked" : d > 0 ? "Slightly more anxious" : "✗ You did not feel more anxious";
+    selfCard = `<div class="sig-card"><h3>How you felt · STAI-6</h3><div class="muted small">baseline → stress test (20-80)</div>
+      <div class="vals">${s1.score} → ${s2.score}</div><div class="muted small">${d >= 0 ? "+" : ""}${d} points</div>
+      <p class="verdict ${d >= 5 ? "used" : "unused"}">${felt}</p></div>`;
+  }
   $("report-signals").innerHTML =
     card("eeg", "Brain · alpha/beta ratio", (v) => Math.pow(10, v).toFixed(2), "") +
-    card("hr", "Heart rate", (v) => Math.round(v), " bpm");
+    card("hr", "Heart rate", (v) => Math.round(v), " bpm") + selfCard;
 
   let lead, summary;
   if (!cal || !cal.ok) {
     lead = "Calibration failed: no clean signal from the headset.";
     summary = "Check that the sensors are green (bar flat on the forehead, rubber tips on the skin behind the ears), then redo the calibration.";
   } else if (cal.confidence === "low") {
-    lead = "Neither signal reacted clearly to the stress test.";
-    summary = "The score will only show how far you are from your calm state, so treat it as rough. Better contact or a harder test usually fixes this: redo the calibration if you can.";
+    lead = "Neither signal showed at least a medium response to the stress test.";
+    summary = "The score will only show distance from your baseline, so treat it as rough. Better sensor contact usually fixes this: redo the calibration if you can.";
   } else {
     const names = cal.used.map((k) => SIGNAL_NAMES[k].toLowerCase()).join(" and ");
     lead = `Your ${names} reacted to stress: the score is personalised to you.`;
-    summary = "From now on, 0 means as calm as you were at rest and 100 means as stressed as during the test. Signals that did not react are left out.";
+    summary = "From now on, 0 means as calm as at baseline and 100 means as stressed as during the test. Signals without at least a medium response are left out.";
+  }
+  if (s1 && s2 && s2.score - s1.score < 5 && cal && cal.ok) {
+    summary += " Note: you did not report feeling more anxious, so the stress anchor may be weak.";
   }
   $("report-lead").textContent = lead;
   $("report-summary").textContent = summary;
+  const att = extra.baseline_task;
+  $("report-debrief").textContent =
+    "About the test: the \"average participant\" bar was not real data. It always sits above you, as in the Montreal " +
+    "Imaging Stress Task, because social comparison makes the stressor work." +
+    (att ? ` Baseline attention check: ${att.hits} of ${att.hits + att.misses} blue circles caught.` : "");
   $("calib-continue").disabled = !(cal && cal.ok);
 }
 
 async function calibrate() {
+  const p = protocol();
   for (;;) {
     show("calibration");
-    calibStep(1);
+    const extra = { protocol: p.key };
+    calibShow("rest", p);
     setPhase("calib_rest");
-    await countdown(DUR.calRest, (rem, tot) => {
-      $("calib-bar").style.width = `${100 * (1 - rem / tot)}%`;
-      $("calib-timer").textContent = `${Math.ceil(rem)} s`;
-    });
+    extra.baseline_task = await vanillaBaseline(p.rest);
     sfx.done();
-    calibStep(2);
+    setPhase("calib_survey");
+    extra.stai_before = await staiSurvey(p);
+    calibShow("stress", p);
     setPhase("calib_stress");
-    const best = await serialSubtraction(DUR.calStress);
+    extra.stressor = await serialSubtraction(p.stress);
+    setPhase("calib_survey");
+    extra.stai_after = await staiSurvey(p);
+    if (p.recovery) {
+      calibShow("recovery", p);
+      setPhase("calib_recovery");
+      await recoveryRest(p.recovery);
+    }
     const waiting = waitBaseline(4000);
     setPhase("calibration_check");
     const cal = await waiting;
-    send({ type: "event", name: "calibration", data: { ...(cal || {}), best_streak: best } });
-    calibStep(3);
-    renderCalibrationReport(cal);
+    send({ type: "event", name: "calibration", data: { ...(cal || {}), ...extra } });
+    calibShow("report", p);
+    renderCalibrationReport(cal, extra);
     sfx.done();
     const choice = await new Promise((r) => {
       $("calib-continue").onclick = () => r("continue");
@@ -812,7 +942,7 @@ $("btn-new").onclick = () => { state.session = null; setPhase("idle"); show("set
 $("durations").textContent =
   `Solve mental math under time pressure, reset, then solve again. Uses your calibration if you already did one ` +
   `(about ${Math.round((DUR.warmup + 2 * DUR.round + DUR.reset) / 60 + 0.5)} min), otherwise calibrates first ` +
-  `(+${Math.round((DUR.calRest + DUR.calStress) / 60 * 2) / 2} min).` +
+  `(+3 to 9 min depending on the protocol).` +
   (QUICK ? " (quick test mode)" : "");
 
 $("mock-stress").oninput = (e) => {

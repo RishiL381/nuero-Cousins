@@ -1,22 +1,26 @@
 """Real-time loop: reads the source, computes features, turns them into a 0-100 stress score,
 and logs sessions to disk.
 
-Stress score: two-anchor personal calibration
----------------------------------------------
-Calibration records each signal in two known states:
-  1. calib_rest    sitting still, eyes open            -> the user's CALM anchor
-  2. calib_stress  hard serial subtraction under time   -> the user's STRESS anchor
-For each signal (EEG calm feature log10(alpha/beta), heart rate) we check that it actually moved
-in the expected direction (EEG ratio down, heart rate up) and by how much, as an effect size
-d = |stress - rest| / pooled spread. Signals that do not respond for this person are not used.
+Stress score: two-anchor personal calibration (protocol and references: docs/methods.md)
+-----------------------------------------------------------------------------------------
+Calibration records each signal in known states:
+  calib_rest      low-demand "vanilla" baseline task, eyes open       -> CALM anchor
+                  (Jennings et al., 1992; Barry et al., 2007)
+  calib_stress    serial subtraction from 1022 by 13 (TSST, Kirschbaum et al., 1993) with an adaptive
+                  time limit and social comparison (MIST, Dedovic et al., 2005)   -> STRESS anchor
+  calib_recovery  quiet rest after the stressor (reported, not an anchor)
+The client sends phase "calibration_check" when the protocol is over; the calibration is computed then.
 
-Live, each responding signal is placed on its own calm -> stress line:
+For each signal (EEG calm feature log10(alpha/beta), heart rate) we compute Cohen's d between the
+stress and rest samples, signed so that positive = moved the expected way (EEG ratio down, heart up).
+A signal is used only with at least a medium effect (d >= 0.5, Cohen, 1988), weighted by d.
+
+Live, each used signal is placed on its own calm -> stress line:
   position = (value - rest) / (stress - rest)      0 = as calm as at rest, 1 = as stressed as in the test
-and the positions are averaged, weighted by effect size. score = 100 * position, clipped to 0-100,
-smoothed over ~5 s. If no signal responded, a weaker fallback uses distance from the rest anchor
-only (3 rest spreads = 100) and the calibration is flagged low confidence.
+score = 100 * weighted mean position, clipped to 0-100, smoothed over ~5 s. If no signal responded,
+a weaker fallback uses distance from the rest anchor only (3 rest SDs = 100), flagged low confidence.
+Note: samples come from overlapping windows, so d describes the size of the change, not significance.
 """
-
 from __future__ import annotations
 
 import csv
@@ -31,7 +35,7 @@ import numpy as np
 
 from .processing import eeg_features, heart_rate, motion_level
 
-CALIB_PHASES = ("calib_rest", "calib_stress")
+CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose data are collected
 # Expected direction under stress: EEG calm ratio goes down (-1), heart rate goes up (+1).
 SIGNALS = {"eeg": -1, "hr": +1}
 
@@ -44,7 +48,7 @@ class Config:
     tick_s: float = 0.5
     smooth_tau_s: float = 5.0
     min_sd = {"eeg": 0.05, "hr": 2.0}  # floor on spreads (log10 units, bpm)
-    min_effect: float = 0.3            # effect size below which a signal is "not responding"
+    min_effect: float = 0.5            # Cohen's d needed to use a signal (medium effect, Cohen 1988)
     min_hr_quality: float = 0.5
     notch_hz: float = 60.0             # mains frequency: 60 Hz in the US, 50 Hz in Europe
 
@@ -81,11 +85,17 @@ class StressModel:
                 info["stress"] = float(np.median(s))
                 pooled = max(math.sqrt((np.var(r) + np.var(s)) / 2), self.cfg.min_sd[name])
                 info["effect"] = direction * (info["stress"] - info["rest"]) / pooled
-                info["used"] = info["effect"] >= self.cfg.min_effect
-                info["note"] = ("responds strongly" if info["effect"] >= 0.8 else
-                                "responds" if info["used"] else
-                                "moved the wrong way" if info["effect"] < -self.cfg.min_effect else
-                                "barely changed")
+                d = info["effect"]
+                info["used"] = d >= self.cfg.min_effect
+                info["note"] = ("large response" if d >= 0.8 else
+                                "medium response" if d >= 0.5 else
+                                "small response, not used" if d >= 0.2 else
+                                "changed the opposite way, not used" if d <= -0.2 else
+                                "no clear change, not used")
+                rec = self._samples["calib_recovery"][name]
+                if len(rec) >= 10:  # how far back toward calm the user came after the stressor
+                    pos = (float(np.median(rec)) - info["rest"]) / (info["stress"] - info["rest"])
+                    info["recovered_pct"] = round(100 * (1 - pos), 0)
             else:
                 info["note"] = "not enough clean signal"
             signals[name] = info
@@ -228,10 +238,9 @@ class Engine:
 
     def set_phase(self, phase: str):
         with self._lock:
-            leaving_calibration = self.phase in CALIB_PHASES and phase not in CALIB_PHASES
             self.phase = phase
             self.source.on_phase(phase)
-            if leaving_calibration:
+            if phase == "calibration_check":  # the client says the calibration protocol is over
                 self.pending_baseline = self.model.finalize()
             self.logger.event(self.now(), phase, "phase", {})
 

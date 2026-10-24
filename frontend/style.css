@@ -165,6 +165,32 @@ button:disabled { opacity: 0.5; cursor: default; }
 .sig-card .verdict.used { color: var(--good); }
 .sig-card .verdict.unused { color: var(--bad); }
 
+/* Calibration protocol */
+.vanilla-wrap { height: 200px; display: flex; align-items: center; justify-content: center; }
+.vanilla { width: 110px; height: 110px; border-radius: 50%; background: #9aa5b1; transition: background 0.25s; }
+.vanilla.hit { box-shadow: 0 0 0 6px rgba(31, 157, 107, 0.35); }
+.blue-word { color: #2f6fd6; }
+.stai { display: grid; gap: 10px; max-width: 640px; margin-bottom: 18px; }
+.stai-item { display: grid; grid-template-columns: 140px 1fr; align-items: center; gap: 10px; }
+.stai-item .q { font-weight: 600; }
+.stai-opts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.stai-opts label { margin: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 7px 4px;
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.8rem; color: var(--text); background: var(--surface); }
+.stai-opts input { display: none; }
+.stai-opts label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.compare { max-width: 420px; margin: 18px auto 0; display: grid; gap: 8px; font-size: 0.85rem; text-align: left; }
+.cmp-row { display: grid; grid-template-columns: 140px 1fr 44px; align-items: center; gap: 10px; }
+.cmp-track { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; }
+.cmp-bar { height: 100%; width: 0; transition: width 0.6s; }
+.cmp-bar.you { background: var(--bad); }
+.cmp-bar.avg { background: var(--good); }
+.refs { margin: 6px 0 16px; font-size: 0.85rem; color: var(--muted); max-width: 860px; }
+.refs summary { cursor: pointer; font-weight: 600; color: var(--text); }
+@media (max-width: 600px) {
+  .stai-item { grid-template-columns: 1fr; }
+  .cmp-row { grid-template-columns: 100px 1fr 40px; }
+}
+
 /* Gauge */
 .gauge { display: flex; justify-content: center; }
 .gauge svg { width: 190px; height: auto; overflow: visible; }

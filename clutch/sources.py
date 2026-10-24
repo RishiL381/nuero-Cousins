@@ -304,7 +304,7 @@ class MockSource:
     """
 
     kind = "mock"
-    PHASE_STRESS = {"idle": 0.3, "calib_rest": 0.25, "calib_stress": 0.85, "warmup": 0.4, "round1": 0.75,
+    PHASE_STRESS = {"idle": 0.3, "calib_rest": 0.25, "calib_stress": 0.85, "calib_recovery": 0.4, "warmup": 0.4, "round1": 0.75,
                     "reset": 0.2, "round2": 0.5, "results": 0.3}
 
     def __init__(self, seed: int = 0):
