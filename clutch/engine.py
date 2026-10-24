@@ -186,6 +186,17 @@ class StressModel:
 
 
 class SessionLogger:
+    """Writes one folder per session (sessions/<time>_<participant>/):
+      meta.json      participant code, consent, protocol, device
+      metrics.csv    every 0.5 s tick: phase, scores, EEG band powers, heart rate, face indicators
+      events.csv     phase changes, answers, questionnaires, calibration report
+      face.csv       face indicators as received from the browser (~1 per second)
+      raw_eeg.csv    Muse EEG at 256 Hz (TP9, AF7, AF8, TP10, microvolts)
+      raw_ppg.csv    Muse optical heart sensor at 64 Hz
+      raw_accel.csv  Muse accelerometer at 52 Hz (g)
+      summary.json   end-of-session summary
+    Times: `t` = seconds since the app started (same clock as events); `lsl_ts` = device timestamp.
+    """
     FACE_COLS = ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"]
     METRIC_COLS = (["t", "phase", "stress", "stress_body", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
                     "hr_bpm", "hr_quality", "motion", "usable_channels", "contact"] + FACE_COLS)
@@ -193,55 +204,80 @@ class SessionLogger:
     def __init__(self, root: Path):
         self.root = root
         self.dir = None
-        self._mf = self._ef = None
-        self._mw = self._ew = None
+        self._files = {}
+        self._writers = {}
+        self._lock = threading.Lock()  # raw samples arrive from the source thread
 
     @property
     def active(self):
         return self.dir is not None
 
+    def _open(self, name, header):
+        f = open(self.dir / name, "w", newline="")
+        w = csv.writer(f)
+        w.writerow(header)
+        self._files[name], self._writers[name] = f, w
+        return w
+
     def start(self, meta: dict):
         self.stop()
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        who = "".join(ch for ch in str(meta.get("participant", "anon")) if ch.isalnum() or ch in "-_") or "anon"
-        self.dir = self.root / f"{stamp}_{who}"
-        self.dir.mkdir(parents=True, exist_ok=True)
-        (self.dir / "meta.json").write_text(json.dumps(meta, indent=2))
-        self._mf = open(self.dir / "metrics.csv", "w", newline="")
-        self._mw = csv.writer(self._mf)
-        self._mw.writerow(self.METRIC_COLS)
-        self._ef = open(self.dir / "events.csv", "w", newline="")
-        self._ew = csv.writer(self._ef)
-        self._ew.writerow(["t", "phase", "name", "data"])
-        return self.dir
+        with self._lock:
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            who = "".join(ch for ch in str(meta.get("participant", "anon")) if ch.isalnum() or ch in "-_") or "anon"
+            self.dir = self.root / f"{stamp}_{who}"
+            self.dir.mkdir(parents=True, exist_ok=True)
+            (self.dir / "meta.json").write_text(json.dumps(meta, indent=2))
+            self._open("metrics.csv", self.METRIC_COLS)
+            self._open("events.csv", ["t", "phase", "name", "data"])
+            self._open("face.csv", ["t", "phase"] + self.FACE_COLS)
+            return self.dir
 
     def metric(self, m: dict):
-        if not self.active:
-            return
-        eeg, hr = m["eeg"], m["hr"]
-        contact = "".join(c["q"][0] for c in eeg.get("channels", {}).values())  # e.g. "ggfb"
-        face = m.get("face") or {}
-        self._mw.writerow([m["t"], m["phase"], m["stress"], m.get("stress_body"), m["z"].get("eeg"), m["z"].get("hr"),
-                           eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
-                           hr.get("bpm"), hr.get("quality"), m["motion"].get("level"),
-                           eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS])
+        with self._lock:
+            if not self.active:
+                return
+            eeg, hr = m["eeg"], m["hr"]
+            contact = "".join(c["q"][0] for c in eeg.get("channels", {}).values())  # e.g. "ggfb"
+            face = m.get("face") or {}
+            self._writers["metrics.csv"].writerow(
+                [m["t"], m["phase"], m["stress"], m.get("stress_body"), m["z"].get("eeg"), m["z"].get("hr"),
+                 eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
+                 hr.get("bpm"), hr.get("quality"), m["motion"].get("level"),
+                 eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS])
 
     def event(self, t, phase, name, data):
-        if self.active:
-            self._ew.writerow([t, phase, name, json.dumps(data)])
-            self._ef.flush()
+        with self._lock:
+            if self.active:
+                self._writers["events.csv"].writerow([t, phase, name, json.dumps(data)])
+                self._files["events.csv"].flush()
+
+    def face(self, t, phase, features: dict):
+        with self._lock:
+            if self.active:
+                self._writers["face.csv"].writerow([t, phase] + [features.get(k) for k in self.FACE_COLS])
+
+    def raw(self, stream: str, lsl_ts, block, t0: float, names):
+        """block: (channels, samples) array; lsl_ts: one timestamp per sample (wall clock, seconds)."""
+        with self._lock:
+            if not self.active:
+                return
+            fname = f"raw_{stream}.csv"
+            w = self._writers.get(fname) or self._open(fname, ["lsl_ts", "t"] + list(names))
+            w.writerows([round(ts, 4), round(ts - t0, 4), *(round(float(v), 3) for v in block[:, i])]
+                        for i, ts in enumerate(lsl_ts))
 
     def finish(self, summary: dict):
-        if self.active:
-            (self.dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        with self._lock:
+            if self.active:
+                (self.dir / "summary.json").write_text(json.dumps(summary, indent=2))
         self.stop()
 
     def stop(self):
-        for f in (self._mf, self._ef):
-            if f:
+        with self._lock:
+            for f in self._files.values():
                 f.close()
-        self.dir = None
-        self._mf = self._ef = self._mw = self._ew = None
+            self._files, self._writers = {}, {}
+            self.dir = None
 
 
 class Engine:
@@ -260,12 +296,22 @@ class Engine:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self.pending_baseline = None  # set when calibration ends, picked up by the server
         self._face, self._face_t = None, 0.0
+        if hasattr(source, "on_samples"):
+            source.on_samples = self._on_samples  # raw samples go to the session files while recording
+
+    RAW_NAMES = {"ppg": ["ppg1", "ppg2", "ppg3"], "accel": ["x", "y", "z"]}
+
+    def _on_samples(self, stream, lsl_ts, block):
+        if self.logger.active:
+            names = self.source.eeg_names if stream == "eeg" else self.RAW_NAMES.get(stream, [])
+            self.logger.raw(stream, lsl_ts, block, self.t0, names)
 
     def set_face(self, features: dict):
         """Face features computed in the browser (MediaPipe), about once per second."""
         with self._lock:
             self._face = {k: float(v) for k, v in features.items() if k in SIGNALS and v is not None}
             self._face_t = time.time()
+            self.logger.face(self.now(), self.phase, self._face)
 
     def start(self):
         self.source.start()

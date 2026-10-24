@@ -893,11 +893,42 @@ async function calibrate() {
     if (choice === "continue") return true;
   }
 }
+// ---------- Dataset recording ----------
+function datasetMeta(kind) {
+  const p = protocol();
+  const src = state.latest && state.latest.source;
+  return {
+    kind, participant: $("ds-participant").value.trim() || $("participant").value.trim() || "anon",
+    consent: $("ds-record").checked && $("ds-consent").checked,
+    protocol: p.key, stressor: $("stressor").value, protocol_seconds: { rest: p.rest, stress: p.stress, recovery: p.recovery },
+    camera: !!(window.ClutchFace && ClutchFace.isRunning()), headset_streaming: !!(src && src.connected),
+    device: src && src.headset ? { name: src.headset.device, address: src.headset.address } : null,
+    started_at: new Date().toISOString(),
+  };
+}
+function recordingChecksPass() {
+  if (!$("ds-record").checked) return true;
+  const missing = [];
+  if (!$("ds-participant").value.trim()) missing.push("no participant code");
+  if (!(window.ClutchFace && ClutchFace.isRunning())) missing.push("the camera is off: no face data");
+  const src = state.latest && state.latest.source;
+  if (!(src && src.connected)) missing.push("the headset is not streaming: no EEG or heart data");
+  if (!$("ds-consent").checked) missing.push("consent is not ticked: this recording will not be exported");
+  return !missing.length || confirm("Recording for the dataset, but:\n- " + missing.join("\n- ") + "\n\nContinue anyway?");
+}
+
 async function calibrateOnly() {
-  if (state.busy) return;
+  if (state.busy || !recordingChecksPass()) return;
   state.busy = true;
   audio().resume();
+  const recording = $("ds-record").checked;
+  if (recording) send({ type: "session_start", meta: datasetMeta("calibration") });
   await calibrate();
+  if (recording) {
+    send({ type: "session_end", summary: { kind: "calibration", calibration: state.baseline } });
+    $("ds-status").textContent = `Calibration recorded for ${$("ds-participant").value.trim() || "anon"}` +
+      ($("ds-consent").checked ? " (with consent: will be exported)." : " (no consent: will NOT be exported).");
+  }
   setPhase("idle");
   show("setup");
   state.busy = false;
@@ -1039,14 +1070,14 @@ function showResults() {
 
 // ---------- Session ----------
 async function runSession() {
-  if (state.busy) return;
+  if (state.busy || !recordingChecksPass()) return;
   state.busy = true;
   audio().resume();
-  const participant = $("participant").value.trim() || "anon";
+  const participant = $("participant").value.trim() || $("ds-participant").value.trim() || "anon";
   const condition = $("condition").value;
   state.session = { participant, condition, rounds: {}, startedAt: new Date().toISOString(), recording: true, dir: null };
   state.history = [];
-  send({ type: "session_start", meta: { participant, condition, durations: DUR, quick: QUICK, started_at: state.session.startedAt,
+  send({ type: "session_start", meta: { ...datasetMeta("session"), participant, condition, durations: DUR, quick: QUICK,
     reused_calibration: !!(state.baseline && state.baseline.ok) } });
   // Reuse the calibration done from the home screen; otherwise calibrate now.
   if (!(state.baseline && state.baseline.ok)) await calibrate();

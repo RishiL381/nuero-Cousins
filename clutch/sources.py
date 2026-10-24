@@ -159,6 +159,7 @@ class LslSource:
         self._inlets, self._rings, self._keep, self._last_rx = {}, {}, {}, {}
         self._opened_at = None
         self.stream_id = None
+        self.on_samples = None  # callback(stream, timestamps, block) for raw recording
         self._stop = threading.Event()
         self._thread = None
 
@@ -242,13 +243,15 @@ class LslSource:
                 continue
             for key, inlet in list(self._inlets.items()):
                 try:
-                    samples, _ = inlet.pull_chunk(timeout=0.0, max_samples=2048)
+                    samples, stamps = inlet.pull_chunk(timeout=0.0, max_samples=2048)
                 except Exception:
                     samples = None
                 if samples:
                     block = np.asarray(samples, dtype=float).T[self._keep[key], :]
                     self._rings[key].push(block)
                     self._last_rx[key] = time.time()
+                    if self.on_samples:
+                        self.on_samples(key, stamps, block)
                     if key == "eeg":
                         self.headset.mark_streaming()
             last = self._last_rx.get("eeg") or self._opened_at
@@ -323,9 +326,17 @@ class MockSource:
         self._beat_phase = 0.0
         self._ar = np.zeros(4)
         self._frac = {"eeg": 0.0, "ppg": 0.0, "acc": 0.0}
+        self._clock = time.time()  # simulated device clock, for raw timestamps
+        self.on_samples = None     # callback(stream, timestamps, block) for raw recording
 
     def start(self):
         self._last = time.time()
+        self._clock = self._last
+
+    def _emit(self, stream, block, fs):
+        if self.on_samples and block.shape[1]:
+            n = block.shape[1]
+            self.on_samples(stream, list(self._clock - (n - 1 - np.arange(n)) / fs), block)
 
     def stop(self):
         pass
@@ -391,6 +402,10 @@ class MockSource:
         acc = np.vstack([rng.normal(0, 0.01, a), rng.normal(0, 0.01, a), 1 + rng.normal(0, 0.01, a)])
         self.acc.push(acc)
         self._t += n / self.eeg_fs
+        self._clock += dt
+        self._emit("eeg", eeg, self.eeg_fs)
+        self._emit("ppg", ppg, self.ppg_fs)
+        self._emit("accel", acc, self.accel_fs)
 
     def get_eeg(self, n):
         with self._lock:

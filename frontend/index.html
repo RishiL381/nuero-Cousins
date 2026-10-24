@@ -128,6 +128,21 @@
         </div>
       </div>
 
+      <div class="card dataset-card">
+        <h2>Dataset recording</h2>
+        <div class="dataset-form">
+          <label>Participant code
+            <input id="ds-participant" type="text" placeholder="e.g. P1 (no real names)" autocomplete="off">
+          </label>
+          <label class="check"><input type="checkbox" id="ds-record" checked> Record calibrations and sessions</label>
+          <label class="check"><input type="checkbox" id="ds-consent"> The participant agrees that their anonymised
+            recordings (EEG, heart rate, face numbers; no images) are shared to train a model</label>
+        </div>
+        <p class="hint" id="ds-status">Start the camera and connect the Muse, then calibrate: every recorded calibration
+          becomes labelled data (baseline = 0, stress test = 1). Build the zip to send with
+          <code>.venv\Scripts\python tools\export_dataset.py</code></p>
+      </div>
+
       <div class="card debug" id="debug" hidden>
         <h2>Debug (simulated headset)</h2>
         <label>Force stress <input id="mock-stress" type="range" min="0" max="1" step="0.05" value="0.3">

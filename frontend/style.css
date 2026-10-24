@@ -86,6 +86,14 @@ h2 { font-size: 0.8rem; margin: 0 0 14px; font-weight: 600; text-transform: uppe
 .session-card .hint { margin: 0; max-width: 360px; }
 .session-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .session-form label { margin: 0; min-width: 160px; }
+.dataset-card { margin-top: 16px; }
+.dataset-form { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 6px 20px; align-items: center; }
+.dataset-form label { margin: 0; }
+label.check { display: flex; gap: 8px; align-items: flex-start; color: var(--text); font-size: 0.85rem; }
+label.check input { margin-top: 3px; }
+.dataset-form label.check:last-child { grid-column: 1 / -1; }
+code { font: 0.8rem ui-monospace, Consolas, monospace; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+@media (max-width: 600px) { .dataset-form { grid-template-columns: 1fr; } }
 .debug { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
 .debug h2 { margin: 0; }
 
