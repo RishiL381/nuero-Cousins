@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clutch · Sea</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #1a2735; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="sea"></canvas>
+  <script src="widget.js"></script>
+  <script>
+    // Standalone widget: its own connection to the Clutch server, read-only.
+    const scene = new BoatScene(document.getElementById("sea"));
+    scene.start();
+    function connect() {
+      const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+      ws.onmessage = (ev) => {
+        const m = JSON.parse(ev.data);
+        if (m.type !== "metrics") return;
+        scene.setStress(m.stress, m.calibrated ? "Waiting for signal" : "Calibrate first");
+      };
+      ws.onclose = () => { scene.setStress(null, "Reconnecting…"); setTimeout(connect, 1000); };
+    }
+    connect();
+  </script>
+</body>
+</html>

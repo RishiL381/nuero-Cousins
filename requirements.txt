@@ -1,0 +1,8 @@
+muselsl>=2.5
+bitstring<5  # muselsl decodes packets with Bits(bytes=...), removed in bitstring 5.0
+pylsl
+brainflow>=5.12
+numpy
+scipy
+fastapi
+uvicorn[standard]

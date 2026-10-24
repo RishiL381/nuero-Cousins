@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clutch</title>
+  <!-- Font loads in the background so a slow network never blocks the page (falls back to system fonts) -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="15" fill="var(--accent)"/>
+        <path d="M5 18c3-3 5-3 8 0s5 3 8 0 5-3 6-1" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M7 23c2.5-2 4.5-2 7 0s4.5 2 7 0 4-2 5-1" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      Clutch
+    </div>
+    <div class="topbar-right">
+      <span id="phase-label" class="muted"></span>
+      <span class="pill" id="live-pill" title="Live stress (press S to hide)">
+        <span class="pill-dot" id="pill-dot"></span>
+        Stress <b data-live="stress">—</b>
+        <span class="sep"></span>
+        <span data-live="hr">— bpm</span>
+      </span>
+      <span class="conn" id="conn" title="Connection to the Python server"></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- SETUP -->
+    <section id="screen-setup" class="screen active">
+      <div class="hero">
+        <h1>Stay sharp under pressure</h1>
+        <p class="lead">Your brain and heart, read live by a Muse headband. Learn to bring stress down and keep your mind at full capacity.</p>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Headset</h2>
+          <div class="head-wrap" id="head-diagram"></div>
+          <dl class="stats">
+            <dt>Source</dt><dd id="source-label">—</dd>
+            <dt>Heart rate</dt><dd data-live="hr">—</dd>
+            <dt>Head motion</dt><dd data-live="motion">—</dd>
+          </dl>
+          <p class="error" id="engine-error" hidden></p>
+          <p class="hint">Rubber tips behind the ears, bar on the forehead. Move hair aside and slightly wet the
+            sensors if a dot stays red.</p>
+        </div>
+
+        <div class="card center">
+          <h2>Live stress</h2>
+          <div class="gauge" data-size="lg"></div>
+          <p class="muted small" id="calib-note">Calibrate to see your stress score.</p>
+          <canvas id="chart-setup" class="chart" aria-label="Signal over the last two minutes"></canvas>
+        </div>
+
+        <div class="card">
+          <h2>Sea widget</h2>
+          <canvas id="sea-preview" class="sea-preview" aria-label="Boat on the sea, waves follow your stress"></canvas>
+          <p class="hint">Calibrate once, then pop the sea out onto your screen. Calm mind, calm water.</p>
+          <div class="row">
+            <button id="btn-calibrate">Calibrate (60 s)</button>
+            <button id="btn-widget" class="primary">Pop out widget</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card session-card">
+        <div>
+          <h2>Pressure test</h2>
+          <p class="hint" id="durations"></p>
+        </div>
+        <div class="session-form">
+          <label>Participant
+            <input id="participant" type="text" placeholder="e.g. P1" autocomplete="off">
+          </label>
+          <label>Reset condition
+            <select id="condition">
+              <option value="breathing">Guided breathing</option>
+              <option value="rest">Quiet rest (control)</option>
+            </select>
+          </label>
+          <button id="btn-start" class="primary">Start session</button>
+        </div>
+      </div>
+
+      <div class="card debug" id="debug" hidden>
+        <h2>Debug (simulated headset)</h2>
+        <label>Force stress <input id="mock-stress" type="range" min="0" max="1" step="0.05" value="0.3">
+          <span id="mock-stress-val">auto</span></label>
+        <button id="mock-auto">Back to auto</button>
+        <span class="muted" id="mock-true"></span>
+      </div>
+    </section>
+
+    <!-- CALIBRATION -->
+    <section id="screen-calibration" class="screen">
+      <div class="center">
+        <h1>Calibration</h1>
+        <p class="lead">Sit still, eyes open on the dot, and relax. This records your personal baseline.</p>
+        <div class="fixation"></div>
+        <div class="progress"><div class="bar" id="calib-bar"></div></div>
+        <p class="timer" id="calib-timer"></p>
+        <div class="contact small" data-live="contact"></div>
+      </div>
+      <div id="calib-fail" class="card warn" hidden>
+        <p><b>Calibration failed:</b> not enough clean signal. Check that the dots are green, then retry.</p>
+        <button id="calib-retry" class="primary">Retry</button>
+        <button id="calib-skip">Continue without stress score</button>
+      </div>
+    </section>
+
+    <!-- TASK (warm-up, round 1, round 2) -->
+    <section id="screen-task" class="screen">
+      <div class="task-head">
+        <h1 id="task-title">Round 1</h1>
+        <div class="task-meta">
+          <span>Score <b id="task-score">0</b></span>
+          <span class="timer big-timer" id="task-timer">90</span>
+        </div>
+      </div>
+      <p class="lead" id="task-instructions"></p>
+      <div class="problem" id="problem">—</div>
+      <input id="answer" class="answer" type="text" inputmode="numeric" autocomplete="off" placeholder="Answer, then Enter">
+      <div class="progress thin" id="problem-bar-wrap"><div class="bar" id="problem-bar"></div></div>
+      <div class="feedback" id="feedback"></div>
+      <div class="press-start" id="task-ready">
+        <p id="task-ready-text"></p>
+        <button class="primary" id="task-go">Start</button>
+      </div>
+    </section>
+
+    <!-- RESET -->
+    <section id="screen-reset" class="screen">
+      <div class="center">
+        <h1 id="reset-title">Breathe</h1>
+        <p class="lead" id="reset-lead"></p>
+        <div class="breath-wrap" id="breath-wrap">
+          <div class="breath" id="breath"></div>
+          <div class="breath-label" id="breath-label">Breathe in</div>
+        </div>
+        <div class="reset-live" id="reset-live">
+          <div class="gauge" data-size="md"></div>
+          <div class="hr-block"><span class="muted">Heart rate</span><div class="big" data-live="hr-big">—</div><span class="muted">bpm</span></div>
+        </div>
+        <canvas id="chart-reset" class="chart"></canvas>
+        <p class="timer" id="reset-timer"></p>
+      </div>
+    </section>
+
+    <!-- RESULTS -->
+    <section id="screen-results" class="screen">
+      <p class="eyebrow" id="results-eyebrow"></p>
+      <h1 class="headline" id="results-headline"></h1>
+      <div class="stat-cards" id="stat-cards"></div>
+
+      <div class="grid two">
+        <div class="card">
+          <h2>What stress costs you</h2>
+          <p class="insight" id="perf-insight"></p>
+          <canvas id="chart-perf" class="chart tall"></canvas>
+          <p class="hint">Accuracy and response time for every answer in both rounds, grouped by your stress at that moment.</p>
+        </div>
+        <div class="card">
+          <h2>Stress over the session</h2>
+          <canvas id="chart-results" class="chart tall"></canvas>
+          <div class="legend" id="results-legend"></div>
+        </div>
+      </div>
+      <p class="muted small" id="results-file"></p>
+      <div class="row">
+        <button id="btn-new" class="primary">New session</button>
+        <button id="btn-widget-2">Pop out widget</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="muted">Esc: abort session · S: show/hide live stress · D: debug panel · Wellness prototype, not a medical device.</footer>
+  <script src="widget.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
