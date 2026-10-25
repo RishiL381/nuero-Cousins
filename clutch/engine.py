@@ -39,6 +39,8 @@ from .processing import eeg_features, heart_rate, motion_level
 from .watch import WatchHR
 
 CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose data are collected
+# Study protocol blocks (headset on): added to the personal model's training data, retrained at study_done
+STUDY_PHASES = ("study_relax", "study_math_easy", "study_math_hard", "study_stroop_hard")
 # Expected direction under stress: +1 goes up, -1 goes down, 0 = learned per person from the calibration.
 #   alpha_<ch>   log10 absolute alpha power (8-12 Hz) of ONE Muse channel, compared with itself between
 #                phases. Chosen over relative alpha because blinks barely touch 8-12 Hz: on simulated data
@@ -105,6 +107,8 @@ class StressModel:
     _smoothed: dict = field(default_factory=dict)
     _dropped: dict = field(default_factory=dict)  # signal -> {reason: windows rejected during calibration}
     personal: PersonalModel | None = None  # heart + face -> EEG stress, trained on this person's calibration
+    _calib_ticks: dict = field(default_factory=dict)  # the last good calibration's ticks, per phase
+    _study_ticks: dict = field(default_factory=dict)  # study phase -> ticks since the last calibration
 
     @property
     def baseline(self):  # kept for callers that only need to know whether we are calibrated
@@ -113,6 +117,9 @@ class StressModel:
     def collect(self, phase, values: dict, dropped: dict | None = None):
         """values: signal name -> current value (None or missing = not available this tick).
         dropped: signal name -> why its value was rejected this tick ("contact", "motion", "muscle")."""
+        if phase in STUDY_PHASES and self.calibration is not None:
+            self._study_ticks.setdefault(phase, []).append(
+                {k: float(x) for k, x in values.items() if k in SIGNALS and x is not None})
         if phase not in self._samples:
             return
         tick = {}
@@ -227,9 +234,8 @@ class StressModel:
                "signals": {k: {kk: (round(vv, 3) if isinstance(vv, float) else vv) for kk, vv in v.items()}
                            for k, v in signals.items() if v["n_rest"] or v["n_stress"] or "dropped" in v}}
         if cal["ok"]:  # personal model: heart + face learn this person's EEG stress position
-            model, cal["personal"] = PersonalModel.fit(self._ticks, signals, GROUPS["brain"],
-                                                       [k for k in SIGNALS if k not in HEADSET_SIGNALS],
-                                                       MIN_SD, MIN_SD_FACE)
+            model, cal["personal"] = self._fit_personal(self._ticks, signals)
+            self._calib_ticks, self._study_ticks = self._ticks, {}
         self._samples, self._dropped = _empty_samples(), {}
         self._ticks = _empty_ticks()
         if cal["ok"]:
@@ -238,6 +244,24 @@ class StressModel:
             self.personal = model
             self._smoothed = {}
         return cal
+
+    @staticmethod
+    def _fit_personal(ticks, signals):
+        return PersonalModel.fit(ticks, signals, GROUPS["brain"], [k for k in SIGNALS if k not in HEADSET_SIGNALS],
+                                 MIN_SD, MIN_SD_FACE)
+
+    def retrain_personal(self):
+        """End of a study protocol: retrain the personal model on the calibration plus the study blocks.
+        Returns the updated calibration, or None when there is nothing new to train on."""
+        if self.calibration is None or not self._study_ticks:
+            return None
+        model, report = self._fit_personal({**self._calib_ticks, **self._study_ticks}, self._signals)
+        self._study_ticks = {}
+        if model is None:  # keep the calibration-only model rather than losing it
+            return None
+        self.personal = model
+        self.calibration["personal"] = report
+        return self.calibration
 
     def personal_score(self, values: dict, dt):
         """Personal model's 0-100 score from heart rate and face, None until it is trained."""
@@ -474,6 +498,10 @@ class Engine:
             self.source.on_phase(phase)
             if phase == "calibration_check":  # the client says the calibration protocol is over
                 self.pending_baseline = self.model.finalize()
+            elif phase == "study_done":  # retrain the personal model on everything recorded since calibration
+                updated = self.model.retrain_personal()
+                if updated is not None:
+                    self.pending_baseline = updated
             self.logger.event(self.now(), phase, "phase", {})
 
     def _run(self):

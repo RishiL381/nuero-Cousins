@@ -1,6 +1,8 @@
 """Personal model: trained automatically at the end of each person's calibration, used live without the headset.
 
-Training table: one row per 0.5 s tick of that person's calibration (rest, stress test, recovery).
+Training table: one row per 0.5 s tick of that person's calibration (rest, stress test, recovery), trained
+when the calibration ends; after a study protocol it is retrained on the calibration plus the study blocks
+(relax, easy math, hard math, hard colour words), which also have the headset on.
   target    the EEG stress position from the calibration equation, nothing learned:
             per channel (value - rest median) / (stress median - rest median) on log alpha power,
             0 = as calm as at rest, 1 = as stressed as in the test, averaged over the channels that
@@ -33,8 +35,8 @@ class PersonalModel:
 
     @classmethod
     def fit(cls, ticks: dict, signals: dict, brain: list, candidates: list, min_sd: dict, default_sd: float):
-        """ticks: phase -> list of {signal: value}; signals: the calibration's per-signal report (finalize).
-        Returns (model or None, report)."""
+        """ticks: phase -> list of {signal: value}, every phase is used (features are centred on calib_rest);
+        signals: the calibration's per-signal report (finalize). Returns (model or None, report)."""
         used = {k: signals[k] for k in brain if k in signals and signals[k].get("used")}
         weak = not used  # no channel reached a medium effect: fall back to every channel that moved at all
         pool = used or {k: signals[k] for k in brain if k in signals and "stress" in signals[k]}
@@ -43,7 +45,7 @@ class PersonalModel:
         if not anchors:
             return None, {"ok": False, "note": "no EEG target: the headset had no clean signal in both phases"}
 
-        rows = [t for phase in ("calib_rest", "calib_stress", "calib_recovery") for t in ticks.get(phase, [])]
+        rows = [t for phase_ticks in ticks.values() for t in phase_ticks]
         y = [cls.eeg_target(t, anchors) for t in rows]
         rows = [t for t, v in zip(rows, y) if v is not None]
         y = np.array([v for v in y if v is not None])
@@ -70,9 +72,10 @@ class PersonalModel:
         fit_r = float(np.corrcoef(pred, y)[0, 1]) if pred.std() > 0 and y.std() > 0 else 0.0
         report = {"ok": True, "rows": len(y), "seconds": round(len(y) * 0.5), "features": feats,
                   "weights": {k: round(float(v), 3) for k, v in zip(feats, w)},
-                  "target_channels": sorted(anchors), "weak_target": weak, "fit_r": round(fit_r, 2),
+                  "phases": [p for p, ts in ticks.items() if ts], "target_channels": sorted(anchors), "weak_target": weak, "fit_r": round(fit_r, 2),
                   "note": ("EEG channels did not clearly respond: target is weak" if weak else
-                           "trained on this calibration")}
+                           "trained on this calibration" if all(p.startswith("calib_") for p in ticks)
+                           else "retrained on the calibration and the study blocks")}
         return cls(feats, centers, scales, w, b, report), report
 
     def predict(self, values: dict):
