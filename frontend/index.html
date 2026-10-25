@@ -168,6 +168,47 @@
         </div>
       </div>
 
+      <!-- STEP 4: DATASET AND MODEL -->
+      <div class="step-block">
+        <div class="step-title"><span class="step-num" id="sn-4">4</span><h2>Train your model</h2>
+          <span class="step-state" id="ss-4">Record calibrations or study sessions first</span></div>
+        <div class="grid two">
+          <div class="card">
+            <h2>Dataset</h2>
+            <p class="tr-line" id="tr-sessions">Looking for recorded sessions…</p>
+            <details class="tr-details"><summary>Recorded sessions</summary><table class="mini" id="tr-session-table"></table></details>
+            <div class="row"><button id="btn-build" class="primary">Build dataset</button></div>
+            <p class="hint" id="tr-dataset">Gathers every session recorded with consent, anonymised (P01, P02…), into
+              <code>dataset_export/</code> and a zip you can send.</p>
+            <pre class="job-log" id="tr-log-dataset" hidden></pre>
+          </div>
+          <div class="card">
+            <h2>Model</h2>
+            <p class="tr-line" id="tr-model">No model trained yet.</p>
+            <div class="row"><button id="btn-train" class="primary">Train model</button></div>
+            <p class="hint">Trains two heart + face models: one on what you were doing (rest or stress test), one that
+              imitates your EEG. Both are tested on data they never saw, and the better one runs live.</p>
+            <pre class="job-log" id="tr-log-train" hidden></pre>
+          </div>
+        </div>
+
+        <div id="tr-results" hidden>
+          <div class="tr-kpis" id="tr-kpis"></div>
+          <p class="hint tr-auc-note">AUC = how often a stress second scores above a calm second, on data the model
+            never saw: 0.5 is a coin flip, 1.0 is perfect.</p>
+          <div class="grid two">
+            <div class="card"><h2>Which signals separate calm from stress</h2><div class="svg-chart" id="ch-models"></div></div>
+            <div class="card"><h2>Learning curve</h2><div class="svg-chart" id="ch-learning"></div>
+              <p class="hint" id="ch-learning-note"></p></div>
+            <div class="card"><div class="card-head"><h2>Score on unseen data</h2><select id="tr-session-pick"></select></div>
+              <div class="svg-chart" id="ch-timeline"></div>
+              <p class="hint">10 s averages. Shaded: calm phases (green) and stress phases (red). The score should rise in red and fall in green.</p></div>
+            <div class="card"><h2>Progress across trainings</h2><div class="svg-chart" id="ch-history"></div>
+              <p class="hint" id="ch-history-note"></p></div>
+          </div>
+        </div>
+      </div>
+
       <!-- OPTIONAL: PRESSURE TEST SESSION -->
       <details class="card session-card more">
         <summary><h2>Pressure test session (optional)</h2></summary>
@@ -379,6 +420,7 @@
   <footer class="muted">P: presentation mode · Esc: abort / close · S: show/hide live stress · D: debug panel · Wellness prototype, not a medical device.</footer>
   <script src="widget.js"></script>
   <script src="app.js"></script>
+  <script src="training.js"></script>
   <script type="module" src="face-sensor.js"></script>
 </body>
 </html>

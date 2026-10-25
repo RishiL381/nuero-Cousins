@@ -196,6 +196,12 @@ Then open http://localhost:8000.
   - The headset-free model runs live in the app ("Trained model" line) when `models/headset_free.joblib` exists.
   - Retrain after recording the team:
     `.venv\Scripts\python tools\export_dataset.py`, then `.venv\Scripts\python tools\train_model.py --data dataset_export --save models`.
+- **Two ways to train:** the label model (rest or stress) and the EEG-teacher model (heart + face imitate the EEG alpha index). With several sessions of one person, they are tested on a new session.
+- **Step 4 in the app, "Train your model":**
+  - **Build dataset** and **Train model** buttons, which run the two scripts with their output shown live;
+  - result tiles;
+  - charts: AUC per signal set, learning curve, score over time on unseen data, and progress across trainings (`models/history.json`).
+  - The new model runs live as soon as training ends.
 
 ### Next steps (day 2)
 1. **Check on the real headset** that the per-sensor profile and the head map behave as on the simulator.

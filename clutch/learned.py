@@ -17,6 +17,9 @@ from pathlib import Path
 
 import numpy as np
 
+# Protocol phases with a label (0 = calm, 1 = stressed). Everything else is unlabelled, including
+# study_math_easy, the in-between control block.
+LABELS = {"calib_rest": 0, "calib_stress": 1, "study_relax": 0, "study_math_hard": 1, "study_stroop_hard": 1}
 EEG_CHANNELS = ("TP9", "AF7", "AF8", "TP10")
 EEG_FEATURES = [f"{b}log_{ch}" for ch in EEG_CHANNELS for b in ("theta", "alpha", "beta")]
 FACE_FEATURES = ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"]
@@ -32,6 +35,7 @@ FEATURE_SETS = {
 BASELINE_S = 45.0       # start of the rest phase used as the personal reference
 SMOOTH_S = 10.0         # causal moving average
 MIN_BASELINE_VALUES = 5
+OUTPUT_TAU_S = 5.0      # smoothing of the live score, same as the rule-based score
 
 
 def row_features(eeg_feats: dict, hr: dict, motion: dict, face: dict | None, min_hr_quality: float = 0.5) -> dict:
@@ -89,6 +93,7 @@ class LiveScorer:
         self._recent = deque()
         self._last_phase = None
         self._t = 0.0
+        self._out = None
 
     @classmethod
     def load(cls, path: Path):
@@ -125,4 +130,7 @@ class LiveScorer:
             pos = (float(self.model.predict(x.reshape(1, -1))[0]) - r) / (s - r)
         else:
             pos = float(self.model.predict_proba(x.reshape(1, -1))[0, 1])
-        return round(float(np.clip(100 * pos, 0, 100)), 1)
+        # Trees trained on little data give near-0 or near-1 outputs: smooth like the app's own score (~5 s)
+        raw = float(np.clip(100 * pos, 0, 100))
+        self._out = raw if self._out is None else self._out + (1 - np.exp(-dt / OUTPUT_TAU_S)) * (raw - self._out)
+        return round(self._out, 1)

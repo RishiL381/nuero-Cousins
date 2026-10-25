@@ -12,15 +12,17 @@ No images are ever recorded: the face data are numbers computed in the browser.
 import argparse
 import csv
 import json
+import os
 import shutil
+import stat
 import sys
 import time
 from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# Everything else is left unlabelled (empty), including study_math_easy, the in-between control block.
-LABELS = {"calib_rest": 0, "calib_stress": 1, "study_relax": 0, "study_math_hard": 1, "study_stroop_hard": 1}
+sys.path.insert(0, str(ROOT))
+from clutch.learned import LABELS  # noqa: E402  (0 = calm, 1 = stressed, other phases unlabelled)
 FEATURE_COLS = ["t", "phase", "label", "alpha", "beta", "theta", "ratio_log", "hr_bpm", "hr_quality", "motion",
                 "usable_channels", "contact", "face_brow", "face_press", "face_squint", "face_frown", "face_smile",
                 "blink_rate", "head_motion", "stress", "stress_body", "stress_ml"] + \
@@ -28,6 +30,17 @@ FEATURE_COLS = ["t", "phase", "label", "alpha", "beta", "theta", "ratio_log", "h
                 for b in ("alpha", "beta", "theta", "gamma", "alphashare", "alphalog")] + \
                [f"{k}_{ch}" for k in ("q", "muscle") for ch in ("TP9", "AF7", "AF8", "TP10")]
 RAW_FILES = ["raw_eeg.csv", "raw_ppg.csv", "raw_accel.csv", "face.csv", "events.csv"]
+
+
+def remove_tree(path):
+    """shutil.rmtree that also removes read-only folders (OneDrive marks synced folders read-only on Windows)."""
+    def retry(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=retry)
+    else:
+        shutil.rmtree(path, onerror=retry)
 
 
 def read_csv(path):
@@ -67,7 +80,7 @@ def main():
 
     sessions_dir, out = Path(args.sessions), Path(args.out)
     if out.exists():
-        shutil.rmtree(out)
+        remove_tree(out)
     (out / "sessions").mkdir(parents=True)
 
     mapping, rows_all, table = {}, [], []

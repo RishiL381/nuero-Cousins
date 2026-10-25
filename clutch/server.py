@@ -15,11 +15,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .engine import Config, Engine
 from .face import FaceLogger
 from .learned import LiveScorer
+from .training import DATASET, MODELS, Jobs, dataset_info, model_report, recorded_sessions
 from .sources import MUSE_BOARDS, LslSource, MockSource, MuseSource
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -122,6 +124,37 @@ def create_app(engine: Engine) -> FastAPI:
             if face_owner[0] is ws:
                 face_log.stop()
                 face_owner[0] = None
+
+    # ---------- Dataset and model (step 4 of the home page) ----------
+    jobs = Jobs()
+
+    @app.get("/api/training")
+    async def training_status():
+        report, history = model_report()
+        return {"sessions": recorded_sessions(engine.logger.root), "dataset": dataset_info(), "job": jobs.snapshot(),
+                "recording": engine.logger.active, "report": report, "history": history,
+                "live_model": engine.learned.info if engine.learned else None}
+
+    @app.post("/api/dataset/build")
+    async def build_dataset():
+        if engine.logger.active:
+            return JSONResponse({"error": "A session is being recorded: finish it first."}, status_code=409)
+        if not jobs.start("dataset", ["tools/export_dataset.py"]):
+            return JSONResponse({"error": "Another step is still running."}, status_code=409)
+        return {"started": True}
+
+    @app.post("/api/model/train")
+    async def train_model():
+        if dataset_info() is None:
+            return JSONResponse({"error": "Build the dataset first."}, status_code=409)
+
+        def reload_model():  # the app switches to the new model as soon as training succeeds
+            engine.learned = LiveScorer.load(MODELS / "headset_free.joblib")
+
+        args = ["tools/train_model.py", "--data", str(DATASET), "--save", str(MODELS), "--notch", str(engine.cfg.notch_hz)]
+        if not jobs.start("train", args, on_done=reload_model):
+            return JSONResponse({"error": "Another step is still running."}, status_code=409)
+        return {"started": True}
 
     app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True), name="frontend")
     return app

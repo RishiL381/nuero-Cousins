@@ -30,6 +30,7 @@ import csv
 import json
 import shutil
 import sys
+import time
 import warnings
 from pathlib import Path
 
@@ -185,12 +186,15 @@ def score(kind, model, scale, X):
     return (model.predict(X) - r) / (s - r)
 
 
-def evaluate(df, kind, features, importance=False):
+def evaluate(df, kind, features, importance=False, train_frac=1.0):
+    """Out-of-fold scores. train_frac < 1 keeps only the start of every training phase (learning curve)."""
     X = df[features].to_numpy(dtype=float)
+    early = (df["block_pos"] <= train_frac).to_numpy()
     lab, y = df["label"].to_numpy(), df["teacher"].to_numpy(dtype=float)
     pred = np.full(len(df), np.nan)
     fold_auc, imp, n_imp = [], np.zeros(len(features)), 0
     for _, train, test in folds(df):
+        train = train & early
         cols = ~np.all(np.isnan(X[train]), axis=0)  # a feature never recorded in training cannot be used
         tl = lab[train]
         if not cols.any() or len(set(tl[~np.isnan(tl)])) < 2 or (kind == "teacher" and np.isnan(y[train]).all()):
@@ -229,6 +233,7 @@ def main():
     sdirs = sorted(d for d in (Path(args.data) / "sessions").iterdir() if (d / "labels.csv").exists())
     print("Computing features from the raw files...")
     df = normalise(pd.DataFrame([r for d in sdirs for r in session_rows(d, args.notch)]))
+    df["block_pos"] = df.groupby(["session", "block"])["t"].rank(pct=True)
     lab = df["label"]
     validation = ("leave-one-participant-out" if df["participant"].nunique() >= 2 else
                   "leave-one-session-out" if df["session"].nunique() >= 2 else
@@ -273,6 +278,29 @@ def main():
     table = df[["phase"]].assign(A=preds["label:headset_free"], B=preds["teacher:headset_free"])
     print(table.groupby("phase", sort=False).mean().round(2).to_string())
     print("\nAUC: 0.5 = chance, 1.0 = perfect. imitation r: correlation with the EEG index on unseen data.")
+    report["phase_means"] = {ph: {k: (None if pd.isna(v) else round(float(v), 3)) for k, v in row.items()}
+                             for ph, row in table.groupby("phase", sort=False).mean().iterrows()}
+
+    # Learning curve: the same validation, training on the first 25/50/75/100% of every phase
+    print("\nLearning curve (AUC on unseen data vs share of each training phase used):")
+    report["learning_curve"] = {"fractions": [0.25, 0.5, 0.75, 1.0], "label": [], "teacher": []}
+    for frac in report["learning_curve"]["fractions"]:
+        for kind in ("label", "teacher"):
+            auc = (report["results"][f"{kind}:headset_free"]["auc"] if frac == 1.0
+                   else evaluate(df, kind, FEATURE_SETS["headset_free"], train_frac=frac)[0]["auc"])
+            report["learning_curve"][kind].append(auc)
+        print(f"  {frac:4.0%}: label {report['learning_curve']['label'][-1]}  teacher {report['learning_curve']['teacher'][-1]}")
+
+    # Held-out score over time, per session (every 2 s), for the charts in the app
+    report["timeline"] = {}
+    for sess, g in df.assign(A=preds["label:headset_free"], B=preds["teacher:headset_free"]).groupby("session"):
+        g = g.sort_values("t").iloc[::2]
+        t0 = float(g["t"].iloc[0])
+        report["timeline"][sess] = [[round(r.t - t0, 1), r.phase, None if pd.isna(r.label) else int(r.label),
+                                     None if pd.isna(r.A) else round(float(r.A), 3),
+                                     None if pd.isna(r.B) else round(float(np.clip(r.B, -0.5, 1.5)), 3)]
+                                    for r in g.itertuples()]
+    report["seconds"] = {"rest": int((lab == 0).sum()), "stress": int((lab == 1).sum()), "unlabelled": int(lab.isna().sum())}
 
     if args.save:
         import joblib
@@ -293,7 +321,14 @@ def main():
         best = max(aucs, key=aucs.get)
         shutil.copy2(out / f"{best}.joblib", out / "headset_free.joblib")
         report["live_model"] = best
-        (out / "report.json").write_text(json.dumps(report, indent=2))
+        report["trained_at"] = time.strftime("%Y-%m-%d %H:%M")
+        (out / "report.json").write_text(json.dumps(report))
+        hist_path = out / "history.json"  # one entry per training, to show progress as the dataset grows
+        history = json.loads(hist_path.read_text()) if hist_path.exists() else []
+        history.append({"trained_at": report["trained_at"], "sessions": len(report["sessions"]),
+                        "seconds": report["seconds"], "validation": validation, "live_model": best,
+                        "auc": {k: v.get("auc") for k, v in report["results"].items()}})
+        hist_path.write_text(json.dumps(history, indent=2))
         print(f"\nSaved {', '.join(f'{k}.joblib' for k in aucs)} in {out}; the app will use '{best}' "
               f"(AUC {aucs[best]:.2f}) as headset_free.joblib")
 
