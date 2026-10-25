@@ -4,9 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Clutch · Sea</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;600&display=swap" media="print" onload="this.media='all'">
   <style>
     html, body { margin: 0; height: 100%; background: #12303b; overflow: hidden; }
-    canvas { display: block; width: 100vw; height: 100vh; }
+    canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+    /* desktop boat (clutch.desk): close button, shown on hover */
+    .close { position: fixed; top: 4px; right: 4px; z-index: 5; width: 22px; height: 22px; padding: 0; border-radius: 5px;
+      border: 1px solid #5d8a95; background: #0f2730; color: #fdf6e3; font: 600 13px "Pixelify Sans", monospace;
+      cursor: pointer; opacity: 0; transition: opacity 0.2s; box-shadow: 0 2px 0 #0a1c24; }
+    body:hover .close { opacity: 1; }
   </style>
 </head>
 <body>
@@ -14,14 +20,25 @@
   <script src="pixel-sea.js"></script>
   <script>
     // Standalone widget: its own connection to the Clutch server, read-only.
+    // ?desk = inside the desktop boat window (python -m clutch.desk): close button + stress sent to it.
+    const desk = new URLSearchParams(location.search).has("desk");
     const scene = new BoatScene(document.getElementById("sea"));
     scene.start();
+    const api = () => (window.pywebview && window.pywebview.api) || null;
+    if (desk) {
+      const btn = document.createElement("button");
+      btn.className = "close"; btn.textContent = "×"; btn.title = "Close (Esc)";
+      btn.onclick = () => api() && api().close();
+      document.body.append(btn);
+      addEventListener("keydown", (e) => { if (e.key === "Escape" && api()) api().close(); });
+    }
     function connect() {
       const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
       ws.onmessage = (ev) => {
         const m = JSON.parse(ev.data);
         if (m.type !== "metrics") return;
         scene.setStress(m.stress, m.calibrated ? "Waiting for signal" : "Calibrate first");
+        if (desk && api()) api().set_stress(m.stress);  // the window drifts faster when stressed
       };
       ws.onclose = () => { scene.setStress(null, "Reconnecting…"); setTimeout(connect, 1000); };
     }

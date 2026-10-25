@@ -1,5 +1,7 @@
 # Clutch: How the App Works
 
+The interface follows Rishi's pixel-art sea: pixel font for titles and numbers, sand and sea colours, with a deep-sea dark mode.
+
 Clutch estimates stress live from three sources: a Muse 2 headband (brain), a heart rate source (a Garmin watch, or the Muse forehead sensor) and a webcam (face). Each user is calibrated against their own calm and stress, so every score is personal. The goal is to keep a good score without the headset: the brain teaches the heart and face models during calibration.
 
 Installation, headset checks and command-line options: `README.md`. Method and references: `docs/methods.md`. Dataset format: `docs/dataset.md`.
@@ -91,7 +93,13 @@ The page has four steps, shown top to bottom. A step turns green when it is done
 **Other elements**
 - **Chips:** which signal groups (brain, heart, face) feed the score right now.
 - **Chart:** the score with the headset and without it over the last 2 minutes.
-- **Sea widget:** waves follow stress. **Pop out widget** keeps it on top of other windows.
+- **Sea (Rishi's pixel boat):** waves, rain and darkness follow stress, and day or night follows focus. When the score stays at 70 or more for 20 s, the sea offers a 5-breath break drawn on the water. This is never offered during a calibration or a session.
+- **Desktop boat:** a small always-on-top boat that drifts along the bottom of the screen while you work.
+  - It goes faster and pitches more when stress rises: about 24 px/s at rest and about 48 px/s at a score of 80.
+  - Drag it anywhere: it stays there for 20 s, then drifts on at that height.
+  - Close it with the × (shown on hover) or Esc.
+  - It is started from the **Desktop boat** button, or with `.venv\Scripts\python -m clutch.desk` (uses `pywebview`).
+- **Pop out window:** the same sea in a browser window that stays on top.
 - **Present** (or the `P` key): full screen for a jury, with both scores, the sea and the chart.
 
 **Pressure test session (optional, collapsed at the bottom):**

@@ -1,35 +1,46 @@
+/* Palette from the pixel sea (frontend/pixel-sea.js): sand and cream by day, deep sea at night,
+   sea teal as the accent, the boat's wood and lantern for warnings. */
 :root {
-  --bg: #f4f6f8;
-  --surface: #ffffff;
-  --text: #15202b;
-  --muted: #64707d;
-  --border: #e1e6eb;
-  --accent: #2563a6;
-  --accent-soft: rgba(37, 99, 166, 0.1);
-  --good: #1f9d6b;
-  --fair: #d08a12;
-  --bad: #d14b3b;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 16px rgba(16, 24, 40, 0.05);
-  --radius: 14px;
+  --bg: #f4ecd8;
+  --surface: #fffaf0;
+  --text: #12303b;
+  --muted: #55717a;
+  --border: #d9c8a2;
+  --accent: #217a91;
+  --accent-soft: rgba(33, 122, 145, 0.12);
+  --on-accent: #fffaf0;
+  --good: #2f8f68;
+  --fair: #c07a2c;
+  --bad: #c8453b;
+  --shadow: 0 3px 0 #d9c8a2;
+  --btn-shadow: rgba(18, 48, 59, 0.35);
+  --radius: 8px;
+  --font-pixel: "Pixelify Sans", ui-monospace, Menlo, monospace;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1620;
-    --surface: #17212d;
-    --text: #e8edf2;
-    --muted: #93a0ad;
-    --border: #253241;
-    --accent: #5b9be0;
-    --accent-soft: rgba(91, 155, 224, 0.14);
-    --shadow: none;
+    --bg: #0b1d24;
+    --surface: #0f2730;
+    --text: #fdf6e3;
+    --muted: #9fc2ca;
+    --border: #2c5866;
+    --accent: #6fcbc9;
+    --accent-soft: rgba(111, 203, 201, 0.14);
+    --on-accent: #0b1d24;
+    --good: #4fc08d;
+    --fair: #e2ab68;
+    --bad: #e0675d;
+    --shadow: 0 3px 0 #06141a;
+    --btn-shadow: #06141a;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f1620; --surface: #17212d; --text: #e8edf2; --muted: #93a0ad; --border: #253241;
-  --accent: #5b9be0; --accent-soft: rgba(91, 155, 224, 0.14); --shadow: none; color-scheme: dark;
+  --bg: #0b1d24; --surface: #0f2730; --text: #fdf6e3; --muted: #9fc2ca; --border: #2c5866;
+  --accent: #6fcbc9; --accent-soft: rgba(111, 203, 201, 0.14); --on-accent: #0b1d24; --good: #4fc08d;
+  --fair: #e2ab68; --bad: #e0675d; --shadow: 0 3px 0 #06141a; --btn-shadow: #06141a; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -438,3 +449,25 @@ footer { text-align: center; font-size: 0.8rem; padding: 12px 16px 16px; }
 .calib-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .calib-buttons .big-btn { flex: 1 1 220px; }
 .brain-row table.mini td { white-space: nowrap; padding: 3px 3px; }
+
+/* ---------- Pixel theme (Rishi's pixel sea): pixel font for titles, buttons and big numbers, thick borders,
+   hard shadows, small corners. Body text stays in Inter so that numbers and hints remain easy to read. ---------- */
+.brand, h1, .step-title h2, .step-num, button, .pill, .sig-card h3, .tr-kpi .v, .pscore b, .pscore span,
+.gauge .num, .gauge .lbl, .card > h2, .card-head h2, .present-btn { font-family: var(--font-pixel); }
+h1 { font-weight: 600; letter-spacing: 0; }
+.card > h2, .card-head h2 { letter-spacing: 0.04em; }
+.card, .sig-card, .tr-kpi { border: 2px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.topbar { border-bottom-width: 2px; }
+.pill { border-width: 2px; border-radius: 6px; }
+button { border-width: 2px; border-radius: 6px; box-shadow: 0 3px 0 var(--btn-shadow); font-weight: 500; letter-spacing: 0.02em; }
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--btn-shadow); }
+button:disabled { box-shadow: none; }
+button.primary { color: var(--on-accent); }
+.step-num { border-radius: 4px; font-weight: 600; }
+.step-num.done { color: var(--on-accent); }
+.gauge .track, .gauge .value { stroke-linecap: butt; }
+.gauge .num { font-weight: 600; }
+.logo { image-rendering: pixelated; }
+.present { background: linear-gradient(180deg, #0f2730 0%, #0b1d24 70%, #081419 100%); color: #fdf6e3; }
+.pscore { border-radius: 8px; border-width: 2px; background: rgba(253, 246, 227, 0.04); border-color: #2c5866; box-shadow: 0 3px 0 #06141a; }
+.pscore span, .pscore small, .present-legend { color: #9fc2ca; }

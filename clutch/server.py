@@ -8,13 +8,16 @@ Then open http://localhost:8000
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import asyncio
 import json
 import mimetypes
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -61,6 +64,8 @@ def create_app(engine: Engine) -> FastAPI:
         task = asyncio.create_task(broadcast_loop())
         yield
         task.cancel()
+        if desk[0] and desk[0].poll() is None:  # close the desktop boat with the app
+            desk[0].terminate()
         face_log.stop()
         engine.stop()
 
@@ -128,6 +133,20 @@ def create_app(engine: Engine) -> FastAPI:
             if face_owner[0] is ws:
                 face_log.stop()
                 face_owner[0] = None
+
+    # ---------- Desktop boat (clutch/desk.py): the pixel sea drifting along the bottom of the screen ----------
+    desk = [None]
+
+    @app.post("/api/desk-boat")
+    async def desk_boat(request: Request):
+        if importlib.util.find_spec("webview") is None:
+            return JSONResponse({"error": "pywebview is missing: .venv\Scripts\python -m pip install pywebview"},
+                                status_code=409)
+        if desk[0] and desk[0].poll() is None:
+            return {"started": False, "note": "already on your screen"}
+        desk[0] = subprocess.Popen([sys.executable, "-m", "clutch.desk", "--url", f"{request.base_url}widget.html?desk"],
+                                   cwd=ROOT)
+        return {"started": True}
 
     # ---------- Dataset and model (step 4 of the home page) ----------
     jobs = Jobs()

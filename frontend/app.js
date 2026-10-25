@@ -1445,6 +1445,12 @@ $("cam-toggle").onclick = async () => {
 $("hs-connect").onclick = () => send({ type: "headset_connect", name: $("hs-name").value.trim() });
 $("hs-disconnect").onclick = () => send({ type: "headset_disconnect" });
 $("hs-name").onkeydown = (e) => { if (e.key === "Enter") $("hs-connect").click(); };
+$("btn-desk").onclick = async () => {
+  const r = await fetch("/api/desk-boat", { method: "POST" }), j = await r.json().catch(() => ({}));
+  const msg = $("desk-msg");
+  msg.hidden = false;
+  msg.textContent = j.error || (j.started ? "The boat is on your desktop (bottom of the screen)." : "The boat is already on your desktop.");
+};
 $("watch-connect").onclick = () => send({ type: "watch_connect", name: $("watch-name").value.trim() });
 $("watch-disconnect").onclick = () => send({ type: "watch_disconnect" });
 $("watch-name").onkeydown = (e) => { if (e.key === "Enter") $("watch-connect").click(); };

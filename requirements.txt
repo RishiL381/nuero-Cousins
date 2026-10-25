@@ -9,3 +9,4 @@ uvicorn[standard]
 scikit-learn  # tools/train_model.py and the trained model in the app
 pandas
 joblib
+pywebview  # desktop boat (python -m clutch.desk)
