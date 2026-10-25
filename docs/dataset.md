@@ -55,6 +55,17 @@ sessions/<id>/     raw data per session
 | usable_channels | number of channels with acceptable contact |
 | contact | contact quality per channel, in the order TP9 AF7 AF8 TP10: g = good, f = fair, b = bad |
 
+**EEG per channel** (`<ch>` = TP9, AF7, AF8, TP10; 4 s window)
+
+| Column | Meaning |
+|---|---|
+| alphalog_\<ch\> | **log10 absolute alpha power (µV²): the brain feature the app uses.** Robust to blinks. |
+| alpha_\<ch\>, beta_\<ch\>, theta_\<ch\> | relative band power of that channel (share of 1–45 Hz) |
+| alphashare_\<ch\> | alpha share of 4–30 Hz power |
+| q_\<ch\> | contact quality of that channel: good, fair or bad. Ignore the channel's values when it is bad. |
+
+Compare each channel with itself: channels can react in opposite directions, so averaging them can hide the effect. Sessions recorded before 25 October lack these columns; compute them from `raw_eeg.csv` if needed.
+
 **Heart and motion**
 
 | Column | Meaning |

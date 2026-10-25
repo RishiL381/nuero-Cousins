@@ -45,6 +45,7 @@ def fake_face(stress, rng):
 def simulate(phases, with_face=False):
     src = MockSource(seed=3)
     src.start()
+    src._advance = lambda: None  # data only from src.step(): deterministic, independent of the PC's speed
     rng = np.random.default_rng(5)
     with tempfile.TemporaryDirectory() as tmp:
         eng = Engine(src, Config(), Path(tmp))
@@ -67,7 +68,9 @@ def test_stress_score_follows_phases():
                          ("round1", 60), ("reset", 60), ("round2", 60)])
     cal = eng.model.calibration
     assert cal is not None and cal["mode"] == "anchored", cal
-    assert set(cal["used"]) == {"eeg", "hr"}, cal  # both signals respond in the simulation
+    eeg = {"alpha_TP9", "alpha_AF7", "alpha_AF8", "alpha_TP10"}
+    # the heart and most channels respond (simulated blinks add noise on the forehead channels, as in real data)
+    assert "hr" in cal["used"] and len(eeg & set(cal["used"])) >= 3, cal["used"]
     print("calibration:", {k: (v["note"], round(v["effect"], 2), v.get("recovered_pct")) for k, v in cal["signals"].items()})
 
     def late_mean(phase):  # last 30 s of each phase, after the smoothing has settled
@@ -99,7 +102,8 @@ def test_headset_free_score_from_face_and_heart():
     print("used:", cal["used"], "| without headset:", cal["used_without_headset"])
     print("face smile direction learned:", cal["signals"]["face_smile"].get("direction"))
     assert {"face_brow", "face_press", "face_smile", "hr"} <= set(cal["used_without_headset"]), cal["used"]
-    assert "face_squint" not in cal["used"] and "eeg" not in cal["used_without_headset"]
+    assert "face_squint" not in cal["used"]
+    assert not any(k.startswith("alpha_") for k in cal["used_without_headset"])
     assert cal["signals"]["face_smile"]["direction"] == -1
 
     def late(phase, key):

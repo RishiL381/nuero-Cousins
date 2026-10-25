@@ -32,7 +32,37 @@ const FACE_LABELS = {
 };
 const FACE_KEYS = Object.keys(FACE_LABELS);
 const isFaceKey = (k) => FACE_KEYS.includes(k);
-const SIGNAL_GROUPS = { Brain: ["eeg"], Heart: ["hr"], Face: FACE_KEYS };
+const EEG_KEYS = ["alpha_TP9", "alpha_AF7", "alpha_AF8", "alpha_TP10"];
+const SIGNAL_GROUPS = { Brain: EEG_KEYS, Heart: ["hr"], Face: FACE_KEYS };
+const groupOf = (k) => Object.keys(SIGNAL_GROUPS).find((g) => SIGNAL_GROUPS[g].includes(k));
+// Brain card of the calibration profile: one sensor per row + a top view of the head coloured by response
+function brainCard(sig, cal) {
+  const rows = EEG_KEYS.filter((k) => sig[k]).map((k) => {
+    const s = sig[k], used = cal && cal.used.includes(k), ch = k.slice(6);
+    const change = s.rest != null && s.stress != null ? Math.round((Math.pow(10, s.stress - s.rest) - 1) * 100) : null;
+    return `<tr><td>${ch}</td><td>${change == null ? "—" : (change > 0 ? "+" : "") + change + "%"}</td>
+      <td>${s.effect != null ? s.effect.toFixed(2) : "—"}</td><td class="${used ? "better" : "worse"}">${used ? "✓" : "✗"}</td></tr>`;
+  }).join("");
+  const color = (k) => {
+    const s = sig[k];
+    if (!s || s.effect == null) return "var(--border)";
+    if (cal && cal.used.includes(k)) return "var(--good)";
+    return s.effect <= -0.2 ? "var(--bad)" : "var(--fair)";
+  };
+  const pos = { alpha_AF7: [42, 32], alpha_AF8: [78, 32], alpha_TP9: [17, 88], alpha_TP10: [103, 88] };
+  const dots = EEG_KEYS.map((k) => {
+    const [x, y] = pos[k], s = sig[k];
+    return `<circle cx="${x}" cy="${y}" r="9" fill="${color(k)}"/><text x="${x}" y="${y < 60 ? y - 13 : y + 21}"
+      text-anchor="middle">${k.slice(6)}</text>`;
+  }).join("");
+  const head = `<svg viewBox="0 0 120 135" class="mini-head"><path class="skull" d="M60 12 l-7 9 h14 z"/>
+    <ellipse class="skull" cx="11" cy="74" rx="6" ry="12"/><ellipse class="skull" cx="109" cy="74" rx="6" ry="12"/>
+    <ellipse class="skull" cx="60" cy="72" rx="46" ry="54"/>${dots}</svg>`;
+  return `<div class="sig-card"><h3>Brain · alpha power per sensor</h3>
+    <div class="muted small">baseline → stress test (alpha should drop), Cohen's d</div>
+    <div class="brain-row">${head}<table class="mini">${rows || "<tr><td>not enough clean signal</td></tr>"}</table></div>
+    <p class="muted small">Green: used · orange: too small · red: changed the opposite way</p></div>`;
+}
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -85,7 +115,7 @@ const handlers = {
     if (state.session && state.session.recording) {
       state.history.push({ t: m.t, phase: state.phase, stress: m.stress, hr });
     }
-    state.live.push({ t: m.t, stress: m.stress, ratio: m.eeg ? m.eeg.ratio_log : null });
+    state.live.push({ t: m.t, stress: m.stress, body: m.stress_body, ratio: m.eeg ? m.eeg.ratio_log : null });
     while (state.live.length && state.live[0].t < m.t - 120) state.live.shift();
     updateLive(m, hr);
   },
@@ -163,6 +193,8 @@ function updateHeadset(src) {
 // ---------- Live widgets ----------
 function updateLive(m, hr) {
   updateHeadset(m.source);
+  updateSteps(m);
+  if (presentOpen()) updatePresent(m);
   const s = m.stress == null ? null : Math.round(m.stress);
   document.querySelectorAll('[data-live="stress"]').forEach((el) => { el.textContent = s ?? "—"; el.style.color = stressColor(s); });
   $("pill-dot").style.background = stressColor(s);
@@ -222,13 +254,62 @@ function updateLive(m, hr) {
     drawChart($("chart-reset"), pts, { tMin: state.resetStart, tMax: state.resetStart + DUR.reset });
   }
 }
-function drawSetupChart() {
+const BODY_COLOR = "#e08a3c";
+// With headset (solid, accent) and without headset (dashed, orange) over the last two minutes
+function drawScoresChart(canvas, seconds = 120, width = 2.5, fullColor = null) {
   const calibrated = state.latest && state.latest.calibrated;
-  const pts = state.live.map((p) => ({ t: p.t, v: calibrated ? p.stress : p.ratio }));
   const now = state.latest ? state.latest.t : 0;
-  drawChart($("chart-setup"), pts, calibrated
-    ? { tMin: now - 120, tMax: now }
-    : { tMin: now - 120, tMax: now, auto: true, label: "alpha/beta (log), last 2 min" });
+  if (!calibrated) {
+    drawChart(canvas, state.live.map((p) => ({ t: p.t, v: p.ratio })),
+      { tMin: now - seconds, tMax: now, auto: true, label: "raw EEG alpha/beta (log) until you calibrate" });
+    return;
+  }
+  drawChart(canvas, state.live.map((p) => ({ t: p.t, v: p.stress })), {
+    tMin: now - seconds, tMax: now, lineColor: fullColor || cssVar("--accent"), lineWidth: width,
+    extra: [{ pts: state.live.map((p) => ({ t: p.t, v: p.body })), color: BODY_COLOR, dash: [6, 5], width }],
+  });
+}
+function drawSetupChart() { drawScoresChart($("chart-setup")); }
+
+// ---------- Home page steps ----------
+function updateSteps(m) {
+  const src = m.source || {};
+  const headset = !!src.connected, camera = !!(window.ClutchFace && ClutchFace.isRunning());
+  const step1 = headset && camera;
+  $("sn-1").classList.toggle("done", step1);
+  $("ss-1").className = "step-state" + (step1 ? " ok" : "");
+  $("ss-1").textContent = `${headset ? "✓" : "✗"} headset streaming · ${camera ? "✓" : "✗"} camera on`;
+  const cal = state.baseline && state.baseline.ok ? state.baseline : null;
+  $("sn-2").classList.toggle("done", !!cal);
+  $("ss-2").className = "step-state" + (cal ? " ok" : "");
+  const minutes = protocol().key === "short" ? "About 3 minutes" : "About 9 minutes";
+  $("ss-2").textContent = cal
+    ? `✓ Calibrated · using ${[...new Set(cal.used.map(groupOf).filter(Boolean))].join(", ").toLowerCase() || "baseline distance only"}`
+    : `${minutes}: baseline, stress test${protocol().recovery ? ", recovery" : ""}`;
+  const live = !!cal && m.stress != null;
+  $("sn-3").classList.toggle("done", live);
+  $("ss-3").className = "step-state" + (live ? " ok" : "");
+  $("ss-3").textContent = !cal ? "Calibrate first to see your scores" : live ? "✓ Live" : "Waiting for a clean signal";
+}
+
+// ---------- Presentation mode ----------
+function presentOpen() { return !$("present").hidden; }
+function togglePresent(show = !presentOpen()) {
+  $("present").hidden = !show;
+  if (show) {
+    state.scenes.present = new BoatScene($("present-sea"));
+    state.scenes.present.start();
+    if (state.latest) updatePresent(state.latest);
+  } else if (state.scenes.present) {
+    state.scenes.present.stop();
+    state.scenes.present = null;
+  }
+}
+function updatePresent(m) {
+  const set = (id, v) => { const r = v == null ? null : Math.round(v); $(id).textContent = r ?? "—"; $(id).style.color = r == null ? "#a9bccb" : stressColor(r, 62); };
+  set("p-full", m.stress);
+  set("p-body", m.stress_body);
+  drawScoresChart($("present-chart"), 180, 4, "#5b9be0");
 }
 
 // ---------- Charts ----------
@@ -275,18 +356,23 @@ function drawChart(canvas, pts, o = {}) {
   }
   if (o.label) ctx.fillText(o.label, padL + 4, padT + 12);
 
-  // Line coloured by stress level (calm green -> tense red), broken where there is no value
-  ctx.lineWidth = 2.5; ctx.lineCap = "round";
-  let prev = null;
-  for (const p of pts) {
-    if (p.v == null || p.t < tMin) { prev = null; continue; }
-    const pt = { x: X(p.t), y: Y(clamp(p.v, yMin, yMax)), v: p.v };
-    if (prev) {
-      ctx.strokeStyle = o.auto ? cssVar("--accent") : stressColor((prev.v + pt.v) / 2);
-      ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(pt.x, pt.y); ctx.stroke();
+  // A line is broken where there is no value. Default colour follows the stress level (green -> red).
+  const line = (series, color, dash = [], width = 2.5) => {
+    ctx.lineWidth = width; ctx.lineCap = "round"; ctx.setLineDash(dash);
+    let prev = null;
+    for (const p of series) {
+      if (p.v == null || p.t < tMin) { prev = null; continue; }
+      const pt = { x: X(p.t), y: Y(clamp(p.v, yMin, yMax)), v: p.v };
+      if (prev) {
+        ctx.strokeStyle = color || (o.auto ? cssVar("--accent") : stressColor((prev.v + pt.v) / 2));
+        ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(pt.x, pt.y); ctx.stroke();
+      }
+      prev = pt;
     }
-    prev = pt;
-  }
+    ctx.setLineDash([]);
+  };
+  for (const s of o.extra || []) line(s.pts, s.color, s.dash || [], s.width);
+  line(pts, o.lineColor, [], o.lineWidth);
   if (!vals.length) {
     ctx.fillStyle = cssVar("--muted"); ctx.textAlign = "center";
     ctx.fillText("waiting for signal", w / 2, h / 2); ctx.textAlign = "left";
@@ -828,10 +914,10 @@ function renderCalibrationReport(cal, extra) {
   const bodyCard = `<div class="sig-card"><h3>Without headset</h3><div class="muted small">signals usable with a watch + webcam</div>
     <div class="vals">${noHeadset.length ? noHeadset.length : "None"}</div>
     <p class="verdict ${noHeadset.length ? "used" : "unused"}">${noHeadset.length
-      ? "✓ " + noHeadset.map((k) => SIGNAL_NAMES[k] || FACE_LABELS[k]).join(", ")
+      ? "✓ " + noHeadset.map((k) => SIGNAL_NAMES[k] || FACE_LABELS[k] || k).join(", ")
       : "✗ Only the EEG reacted: the headset-free score is not available yet"}</p></div>`;
   $("report-signals").innerHTML =
-    card("eeg", "Brain · alpha/beta ratio", (v) => Math.pow(10, v).toFixed(2), "") +
+    brainCard(sig, cal) +
     card("hr", "Heart rate", (v) => Math.round(v), " bpm") + faceCard + bodyCard + selfCard;
 
   let lead, summary;
@@ -842,7 +928,7 @@ function renderCalibrationReport(cal, extra) {
     lead = "Neither signal showed at least a medium response to the stress test.";
     summary = "The score will only show distance from your baseline, so treat it as rough. Better sensor contact usually fixes this: redo the calibration if you can.";
   } else {
-    const names = cal.used.map((k) => SIGNAL_NAMES[k].toLowerCase()).join(" and ");
+    const names = [...new Set(cal.used.map(groupOf).filter(Boolean))].map((g) => g.toLowerCase()).join(" and ");
     lead = `Your ${names} reacted to stress: the score is personalised to you.`;
     summary = "From now on, 0 means as calm as at baseline and 100 means as stressed as during the test. Signals without at least a medium response are left out.";
   }
@@ -1128,6 +1214,9 @@ state.scenes.preview = new BoatScene($("sea-preview"));
 state.scenes.preview.start();
 
 $("btn-start").onclick = () => runSession();
+$("btn-present").onclick = () => togglePresent(true);
+$("present-close").onclick = () => togglePresent(false);
+$("protocol").onchange = () => { if (state.latest) updateSteps(state.latest); };
 // Face camera (MediaPipe runs in face-sensor.js; only the numbers are sent to the server)
 function renderFaceBars(f) {
   $("face-bars").innerHTML = FACE_KEYS.map((k) => {
@@ -1180,6 +1269,8 @@ $("mock-auto").onclick = () => { $("mock-stress-val").textContent = "auto"; send
 
 document.addEventListener("keydown", (e) => {
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName);
+  if (e.key === "Escape" && presentOpen()) { togglePresent(false); return; }
+  if (!typing && !state.busy && e.key.toLowerCase() === "p") { togglePresent(); return; }
   if (e.key === "Escape" && state.busy) {
     if (confirm("Abort?")) {
       if (state.session && state.session.recording) send({ type: "session_end", summary: { aborted: true } });

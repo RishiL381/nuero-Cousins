@@ -22,7 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 LABELS = {"calib_rest": 0, "calib_stress": 1}   # everything else is left unlabelled (empty)
 FEATURE_COLS = ["t", "phase", "label", "alpha", "beta", "theta", "ratio_log", "hr_bpm", "hr_quality", "motion",
                 "usable_channels", "contact", "face_brow", "face_press", "face_squint", "face_frown", "face_smile",
-                "blink_rate", "head_motion", "stress", "stress_body"]
+                "blink_rate", "head_motion", "stress", "stress_body"] + \
+               [f"{b}_{ch}" for ch in ("TP9", "AF7", "AF8", "TP10") for b in ("alpha", "beta", "theta", "alphashare", "alphalog")] + \
+               [f"q_{ch}" for ch in ("TP9", "AF7", "AF8", "TP10")]
 RAW_FILES = ["raw_eeg.csv", "raw_ppg.csv", "raw_accel.csv", "face.csv", "events.csv"]
 
 

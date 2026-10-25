@@ -36,85 +36,121 @@
     <section id="screen-setup" class="screen active">
       <div class="hero">
         <h1>Stay sharp under pressure</h1>
-        <p class="lead">Your brain and heart, read live by a Muse headband. Learn to bring stress down and keep your mind at full capacity.</p>
+        <p class="lead">Your brain, heart and face, read live. Learn to bring stress down and keep your mind at full capacity.</p>
       </div>
 
-      <div class="grid">
-        <div class="card">
-          <h2>Headset</h2>
-          <div class="hs" id="hs-box" hidden>
-            <div class="hs-status"><span class="hs-dot" id="hs-dot"></span><span id="hs-text">Not connected</span></div>
-            <div class="hs-controls">
-              <input id="hs-name" type="text" placeholder="Muse name (optional), e.g. Muse-3724" autocomplete="off">
-              <button id="hs-connect" class="primary">Connect</button>
-              <button id="hs-disconnect">Disconnect</button>
+      <!-- STEP 1: CONNECT -->
+      <div class="step-block">
+        <div class="step-title"><span class="step-num" id="sn-1">1</span><h2>Connect</h2>
+          <span class="step-state" id="ss-1">Headset and camera</span></div>
+        <div class="grid two">
+          <div class="card">
+            <h2>Muse headset</h2>
+            <div class="hs" id="hs-box" hidden>
+              <div class="hs-status"><span class="hs-dot" id="hs-dot"></span><span id="hs-text">Not connected</span></div>
+              <div class="hs-controls">
+                <input id="hs-name" type="text" placeholder="Muse name (optional), e.g. Muse-3724" autocomplete="off">
+                <button id="hs-connect" class="primary">Connect</button>
+                <button id="hs-disconnect">Disconnect</button>
+              </div>
+              <p class="hs-log" id="hs-log"></p>
             </div>
-            <p class="hs-log" id="hs-log"></p>
+            <div class="head-wrap" id="head-diagram"></div>
+            <ul class="contact-why" id="contact-why"></ul>
+            <dl class="stats">
+              <dt>Source</dt><dd id="source-label">—</dd>
+              <dt>Heart rate</dt><dd data-live="hr">—</dd>
+              <dt>Head motion</dt><dd data-live="motion">—</dd>
+            </dl>
+            <p class="error" id="engine-error" hidden></p>
+            <p class="hint">Rubber tips behind the ears, bar on the forehead. Move hair aside and slightly wet the
+              sensors if a dot stays red.</p>
           </div>
-          <div class="head-wrap" id="head-diagram"></div>
-          <ul class="contact-why" id="contact-why"></ul>
-          <dl class="stats">
-            <dt>Source</dt><dd id="source-label">—</dd>
-            <dt>Heart rate</dt><dd data-live="hr">—</dd>
-            <dt>Head motion</dt><dd data-live="motion">—</dd>
-          </dl>
-          <p class="error" id="engine-error" hidden></p>
-          <p class="hint">Rubber tips behind the ears, bar on the forehead. Move hair aside and slightly wet the
-            sensors if a dot stays red.</p>
-        </div>
 
-        <div class="card center">
-          <h2>Live stress</h2>
-          <div class="gauge" data-size="lg"></div>
-          <div class="chips" id="signal-chips"></div>
-          <p class="body-score">Without headset (heart + face): <b data-live="stress-body">—</b></p>
-          <p class="muted small" id="calib-note">Calibrate to see your stress score.</p>
-          <canvas id="chart-setup" class="chart" aria-label="Signal over the last two minutes"></canvas>
-        </div>
-
-        <div class="card">
-          <h2>Face (webcam)</h2>
-          <div class="cam">
-            <video id="cam-video" playsinline muted></video>
-            <canvas id="cam-overlay"></canvas>
-            <div class="cam-off" id="cam-off">Camera off</div>
-          </div>
-          <p class="hs-status small" id="cam-status">Runs on this computer only: no image is sent or saved.</p>
-          <div class="face-bars" id="face-bars"></div>
-          <div class="row"><button id="cam-toggle" class="primary">Start camera</button></div>
-          <p class="hint">Start it before calibrating: the face indicators are then calibrated with your heart and brain,
-            which gives the "without headset" score.</p>
-        </div>
-
-        <div class="card">
-          <h2>Sea widget</h2>
-          <canvas id="sea-preview" class="sea-preview" aria-label="Boat on the sea, waves follow your stress"></canvas>
-          <p class="hint">Calibrate once, then pop the sea out onto your screen. Calm mind, calm water.</p>
-          <label>Calibration protocol
-            <select id="protocol">
-              <option value="standard">Standard: baseline 3 min, stress 2 min, recovery 2 min (recommended)</option>
-              <option value="short">Short: baseline 1 min, stress 1 min 15 (demo)</option>
-            </select>
-          </label>
-          <label>Stress test
-            <select id="stressor">
-              <option value="math">Quick math: a new calculation each time (MIST-style, recommended)</option>
-              <option value="stroop">Colour words: name the ink colour (Stroop)</option>
-              <option value="serial">Count down from 1022 by 13 (TSST, hardest)</option>
-            </select>
-          </label>
-          <div class="row">
-            <button id="btn-calibrate">Calibrate</button>
-            <button id="btn-widget" class="primary">Pop out widget</button>
+          <div class="card">
+            <h2>Face (webcam)</h2>
+            <div class="cam">
+              <video id="cam-video" playsinline muted></video>
+              <canvas id="cam-overlay"></canvas>
+              <div class="cam-off" id="cam-off">Camera off</div>
+            </div>
+            <p class="hs-status small" id="cam-status">Runs on this computer only: no image is sent or saved.</p>
+            <div class="face-bars" id="face-bars"></div>
+            <div class="row"><button id="cam-toggle" class="primary">Start camera</button></div>
+            <p class="hint">Start it before calibrating: the face is then calibrated with your heart and brain, which
+              gives the "without headset" score.</p>
           </div>
         </div>
       </div>
 
-      <div class="card session-card">
-        <div>
-          <h2>Pressure test</h2>
-          <p class="hint" id="durations"></p>
+      <!-- STEP 2: CALIBRATE -->
+      <div class="step-block">
+        <div class="step-title"><span class="step-num" id="sn-2">2</span><h2>Calibrate</h2>
+          <span class="step-state" id="ss-2">About 9 minutes: baseline, stress test, recovery</span></div>
+        <div class="card calib-card">
+          <div class="calib-grid">
+            <label>Protocol
+              <select id="protocol">
+                <option value="standard">Standard · about 9 min (recommended)</option>
+                <option value="short">Short · about 3 min (demo)</option>
+              </select>
+            </label>
+            <label>Stress test
+              <select id="stressor">
+                <option value="math">Quick math (recommended)</option>
+                <option value="stroop">Colour words (Stroop)</option>
+                <option value="serial">Count down 1022 − 13 (hardest)</option>
+              </select>
+            </label>
+            <label>Participant code
+              <input id="ds-participant" type="text" placeholder="e.g. P1 (no real names)" autocomplete="off">
+            </label>
+            <div class="calib-checks">
+              <label class="check"><input type="checkbox" id="ds-record" checked> Record for the dataset</label>
+              <label class="check"><input type="checkbox" id="ds-consent"> The participant agrees that their anonymised
+                recordings (EEG, heart rate, face numbers; no images) are shared to train a model</label>
+            </div>
+          </div>
+          <div class="calib-actions">
+            <button id="btn-calibrate" class="primary big-btn">Start calibration</button>
+            <p class="hint" id="ds-status">Every recorded calibration becomes labelled data (baseline = 0, stress test = 1).
+              Build the zip to send with <code>.venv\Scripts\python tools\export_dataset.py</code></p>
+          </div>
         </div>
+      </div>
+
+      <!-- STEP 3: LIVE -->
+      <div class="step-block">
+        <div class="step-title"><span class="step-num" id="sn-3">3</span><h2>Live</h2>
+          <span class="step-state" id="ss-3">Calibrate first to see your scores</span>
+          <button id="btn-present" class="present-btn" title="Full-screen view for a jury or a projector (P)">Present</button></div>
+        <div class="grid two">
+          <div class="card center">
+            <h2>Live stress</h2>
+            <div class="gauge" data-size="lg"></div>
+            <div class="chips" id="signal-chips"></div>
+            <p class="body-score">Without headset (heart + face): <b data-live="stress-body">—</b></p>
+            <p class="muted small" id="calib-note">Calibrate to see your stress score.</p>
+            <canvas id="chart-setup" class="chart" aria-label="Both scores over the last two minutes"></canvas>
+            <div class="legend chart-legend">
+              <span><i class="line-full"></i>With headset (brain + heart + face)</span>
+              <span><i class="line-body"></i>Without headset (heart + face)</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Sea widget</h2>
+            <canvas id="sea-preview" class="sea-preview tall" aria-label="Boat on the sea, waves follow your stress"></canvas>
+            <p class="hint">Pop the sea out onto your screen: it stays on top of your other windows. Calm mind, calm water.</p>
+            <div class="row"><button id="btn-widget" class="primary">Pop out widget</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OPTIONAL: PRESSURE TEST SESSION -->
+      <details class="card session-card more">
+        <summary><h2>Pressure test session (optional)</h2></summary>
+        <p class="hint" id="durations"></p>
         <div class="session-form">
           <label>Participant
             <input id="participant" type="text" placeholder="e.g. P1" autocomplete="off">
@@ -127,22 +163,7 @@
           </label>
           <button id="btn-start" class="primary">Start session</button>
         </div>
-      </div>
-
-      <div class="card dataset-card">
-        <h2>Dataset recording</h2>
-        <div class="dataset-form">
-          <label>Participant code
-            <input id="ds-participant" type="text" placeholder="e.g. P1 (no real names)" autocomplete="off">
-          </label>
-          <label class="check"><input type="checkbox" id="ds-record" checked> Record calibrations and sessions</label>
-          <label class="check"><input type="checkbox" id="ds-consent"> The participant agrees that their anonymised
-            recordings (EEG, heart rate, face numbers; no images) are shared to train a model</label>
-        </div>
-        <p class="hint" id="ds-status">Start the camera and connect the Muse, then calibrate: every recorded calibration
-          becomes labelled data (baseline = 0, stress test = 1). Build the zip to send with
-          <code>.venv\Scripts\python tools\export_dataset.py</code></p>
-      </div>
+      </details>
 
       <div class="card debug" id="debug" hidden>
         <h2>Debug (simulated headset)</h2>
@@ -294,7 +315,21 @@
     </section>
   </main>
 
-  <footer class="muted">Esc: abort session · S: show/hide live stress · D: debug panel · Wellness prototype, not a medical device.</footer>
+  <!-- Presentation mode: big, readable from the back of a room (P to toggle, Esc to close) -->
+  <div class="present" id="present" hidden>
+    <button class="present-close" id="present-close">Close (Esc)</button>
+    <div class="present-scores">
+      <div class="pscore"><span>With headset</span><b id="p-full">—</b><small>brain + heart + face</small></div>
+      <div class="pscore body"><span>Without headset</span><b id="p-body">—</b><small>heart + face only</small></div>
+    </div>
+    <canvas id="present-sea" class="present-sea" aria-label="Boat on the sea, waves follow stress"></canvas>
+    <canvas id="present-chart" class="present-chart" aria-label="Both scores over the last three minutes"></canvas>
+    <div class="legend chart-legend present-legend">
+      <span><i class="line-full"></i>With headset</span><span><i class="line-body"></i>Without headset</span>
+    </div>
+  </div>
+
+  <footer class="muted">P: presentation mode · Esc: abort / close · S: show/hide live stress · D: debug panel · Wellness prototype, not a medical device.</footer>
   <script src="widget.js"></script>
   <script src="app.js"></script>
   <script type="module" src="face-sensor.js"></script>

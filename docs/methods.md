@@ -75,21 +75,21 @@ Two presets are available: **Standard** (recommended) and **Short** (for live de
 - **Device:** Muse 2. Its validity for research-grade event-related potentials has been shown by Krigolson et al. (2017).
 - **Channels:** TP9, AF7, AF8, TP10.
 - **Preprocessing:** band-pass 1–45 Hz and a 60 Hz notch, on 4-second windows updated every 0.5 s.
-- **Band power:** Welch's averaged-periodogram method (Welch, 1967), integrated over alpha (8–12 Hz) and beta (13–30 Hz).
-- **Feature:** `log10(alpha / beta)`, the median over channels with acceptable contact.
-- **Why alpha and beta:**
-  - alpha oscillations track cognitive state and performance (Klimesch, 1999);
-  - frontal alpha decreases under mental arithmetic stress (Al-Shargie et al., 2016);
-  - alpha and beta power are among the features most used in EEG stress studies (Katmah et al., 2021).
+- **Band power:** Welch's averaged-periodogram method (Welch, 1967), integrated over theta (4–8 Hz), alpha (8–12 Hz) and beta (13–30 Hz).
+- **Feature: alpha power per channel.** For each of the four channels, `log10` of the absolute alpha power (µV²). Each channel is compared **with itself** between baseline and stressor, and only in windows where that channel has acceptable contact.
+- **Why alpha, and not alpha/beta:**
+  - in a meta-analysis of spectral EEG studies of psychosocial stress, alpha power decreased consistently (Hedges' g = 0.6, p = 0.001), while beta showed no significant pooled effect (g = −0.31, p = 0.29) and frontal alpha asymmetry no effect (Vanhollebeke et al., 2022);
+  - alpha oscillations track cognitive state and performance (Klimesch, 1999); frontal alpha decreases under mental arithmetic stress (Al-Shargie et al., 2016).
+- **Why per channel:** in our first real session (P01), the median over the four channels showed no change because channels moved in opposite directions. The right forehead channel (AF8) showed a large alpha decrease (d = 1.14), the channels behind the ears an increase. Contact also differed between phases, so a median mixed different channels across conditions.
+- **Why absolute log power rather than relative power:** blinks put most of their energy below 4 Hz but spill into theta. On simulated data with blinks on the forehead channels, relative alpha lost those channels (d ≈ 0), while log absolute alpha kept them (d ≈ 1.8–2.3). Absolute power is only compared within one channel and one session, so electrode impedance differences between people do not matter.
 - **Limitation:** Klimesch (1999) recommends adjusting bands to each person's individual alpha frequency. Clutch uses fixed bands for now.
-
 ### Heart rate
 - **Source:** the Muse optical (PPG) sensor, 10-second windows, beat detection cross-checked against the spectral peak.
 - **Why:** heart rate rises reliably in the TSST (Kirschbaum et al., 1993), and cardiac measures are standard stress readouts (Allen et al., 2014; Giannakakis et al., 2019).
 - **Methodological guidance:** heart rate variability (HRV) is a stronger marker but needs cleaner recordings; we follow the recommendations of Laborde et al. (2017) for any future HRV work.
 
 ### Decision rule
-For each signal we compute **Cohen's d** between the stressor and baseline samples, signed so that a positive value means the expected direction (EEG ratio down, heart rate up).
+For each signal (each EEG channel, heart rate, each face indicator) we compute **Cohen's d** between the stressor and baseline samples, signed so that a positive value means the expected direction: alpha down, heart rate up. For face indicators with no established direction (smile, blink rate), the direction is learned from the calibration.
 
 | d | Label (Cohen, 1988) | Used? |
 |---|---|---|
@@ -99,7 +99,9 @@ For each signal we compute **Cohen's d** between the stressor and baseline sampl
 | between −0.2 and 0.2 | negligible | no |
 | ≤ −0.2 | opposite direction | no |
 
-- **Signals that are used** are weighted by d. Each one is placed on its own scale between the baseline and stressor medians: 0 = baseline, 100 = stressor level.
+- **Signals that are used** are placed on their own scale between the baseline and stressor medians: 0 = baseline, 100 = stressor level.
+- **Each modality counts once.** Inside a modality (brain, heart, face), used signals are averaged weighted by d. The modality then weighs as much as its strongest signal. So four EEG channels or seven face indicators cannot outvote the heart.
+- **Two scores:** the full score uses brain, heart and face; the **headset-free score** uses heart and face only.
 - **If no signal reaches d ≥ 0.5,** the score falls back to distance from baseline, where 3 baseline standard deviations = 100. This is shown as **low confidence**.
 
 **Caveat:** samples come from overlapping windows, so they are not independent. d is used here as a descriptive measure of response size, not as a significance test.
@@ -138,6 +140,7 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
 - Laborde, S., Mosley, E., & Thayer, J. F. (2017). Heart rate variability and cardiac vagal tone in psychophysiological research: Recommendations for experiment planning, data analysis, and data reporting. *Frontiers in Psychology, 8*, 213. https://doi.org/10.3389/fpsyg.2017.00213
 - Lehrer, P. M., & Gevirtz, R. (2014). Heart rate variability biofeedback: How and why does it work? *Frontiers in Psychology, 5*, 756. https://doi.org/10.3389/fpsyg.2014.00756
 - Marteau, T. M., & Bekker, H. (1992). The development of a six-item short-form of the state scale of the Spielberger State-Trait Anxiety Inventory (STAI). *British Journal of Clinical Psychology, 31*(3), 301–306. https://doi.org/10.1111/j.2044-8260.1992.tb00997.x
+- Vanhollebeke, G., De Smet, S., De Raedt, R., Baeken, C., van Mierlo, P., & Vanderhasselt, M.-A. (2022). The neural correlates of psychosocial stress: A systematic review and meta-analysis of spectral analysis EEG studies. *Neurobiology of Stress, 18*, 100452. https://doi.org/10.1016/j.ynstr.2022.100452
 - Welch, P. D. (1967). The use of fast Fourier transform for the estimation of power spectra: A method based on time averaging over short, modified periodograms. *IEEE Transactions on Audio and Electroacoustics, 15*(2), 70–73. https://doi.org/10.1109/TAU.1967.1161901
 
 ### Notes on the references

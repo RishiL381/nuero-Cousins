@@ -77,11 +77,65 @@ h2 { font-size: 0.8rem; margin: 0 0 14px; font-weight: 600; text-transform: uppe
 @keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 .hero { margin-bottom: 22px; }
+
+/* Presentation mode */
+.present {
+  position: fixed; inset: 0; z-index: 50; padding: 28px 36px; color: #eef4f8;
+  background: radial-gradient(ellipse at 50% 20%, #1d3a52 0%, #0f1c2a 60%, #0a121b 100%);
+  display: grid; grid-template-columns: minmax(260px, 1fr) 2fr; grid-template-rows: 1fr auto auto; gap: 18px 28px;
+}
+.present-close { position: absolute; top: 14px; right: 18px; background: rgba(255, 255, 255, 0.08); color: #eef4f8; border-color: rgba(255, 255, 255, 0.2); }
+.present-scores { display: grid; gap: 18px; align-content: center; }
+.pscore { display: grid; gap: 2px; padding: 18px 22px; border-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }
+.pscore span { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.08em; color: #a9bccb; font-weight: 600; }
+.pscore b { font-size: clamp(4rem, 9vw, 7.5rem); line-height: 1; font-variant-numeric: tabular-nums; transition: color 0.6s; }
+.pscore small { color: #a9bccb; font-size: 0.95rem; }
+.pscore.body { border-style: dashed; }
+.present-sea { width: 100%; height: 100%; min-height: 240px; border-radius: 16px; }
+.present-chart { grid-column: 1 / -1; width: 100%; height: 26vh; }
+.present-legend { grid-column: 1 / -1; color: #a9bccb; font-size: 0.95rem; }
+.present .chart-legend .line-full { border-color: #5b9be0; }
+@media (max-width: 760px) {
+  .present { grid-template-columns: 1fr; grid-template-rows: auto 200px auto auto; overflow: auto; padding: 20px 16px; }
+}
+
+/* Home page: three numbered steps */
+.step-block { margin-bottom: 30px; }
+.step-title { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.step-title h2 { margin: 0; font-size: 1.05rem; text-transform: none; letter-spacing: -0.01em; color: var(--text); }
+.step-num { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.9rem; background: var(--accent-soft); color: var(--accent); transition: background 0.4s, color 0.4s; }
+.step-num.done { background: var(--good); color: #fff; }
+.step-state { color: var(--muted); font-size: 0.85rem; }
+.step-state.ok { color: var(--good); font-weight: 500; }
+.present-btn { margin-left: auto; padding: 6px 14px; font-size: 0.85rem; }
+.calib-card { display: grid; grid-template-columns: 1fr minmax(220px, 300px); gap: 24px; align-items: start; }
+.calib-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+.calib-grid label { margin-bottom: 10px; }
+.calib-checks { display: grid; gap: 8px; align-content: center; }
+.calib-actions { display: grid; gap: 10px; }
+.big-btn { padding: 14px 18px; font-size: 1rem; font-weight: 600; }
+.calib-actions .hint { margin: 0; }
+.sea-preview.tall { height: 230px; }
+.chart-legend { justify-content: center; margin-top: 6px; }
+.chart-legend i { display: inline-block; width: 16px; height: 0; border-top: 3px solid; vertical-align: 3px; margin-right: 6px; }
+.chart-legend .line-full { border-color: var(--accent); }
+.chart-legend .line-body { border-color: #e08a3c; border-top-style: dashed; }
+details.more summary { cursor: pointer; list-style: none; }
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary h2 { display: inline; margin: 0; }
+details.more summary::after { content: " ▾"; color: var(--muted); }
+details.more[open] summary { margin-bottom: 12px; }
+details.more .session-form { margin-top: 8px; }
+@media (max-width: 760px) {
+  .calib-card { grid-template-columns: 1fr; }
+  .calib-grid { grid-template-columns: 1fr; }
+}
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
 .grid.two { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); margin-top: 16px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
 .card.warn { border-color: var(--fair); margin: 24px auto 0; max-width: 560px; }
-.session-card { margin-top: 16px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+.session-card { margin-top: 0; }
 .session-card h2 { margin-bottom: 4px; }
 .session-card .hint { margin: 0; max-width: 360px; }
 .session-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
@@ -134,7 +188,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .contact.small { justify-content: center; margin-top: 18px; }
 
 /* Face camera */
-.cam { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #0f1620; border-radius: 10px; overflow: hidden; }
+.cam { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 260px; background: #0f1620; border-radius: 10px; overflow: hidden; }
 .cam video, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cam video { transform: scaleX(-1); }   /* mirror, like a selfie */
 .cam-off { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #93a0ad; font-size: 0.9rem; }
@@ -143,6 +197,10 @@ button:disabled { opacity: 0.5; cursor: default; }
 .face-bar .track { height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; }
 .face-bar .fill { height: 100%; width: 0; background: var(--accent); transition: width 0.4s; }
 .face-bar b { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+.brain-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: center; margin-top: 6px; }
+.mini-head { width: 120px; height: auto; }
+.mini-head .skull { fill: var(--bg); stroke: var(--border); stroke-width: 2; }
+.mini-head text { font-size: 8px; fill: var(--muted); font-weight: 600; }
 table.mini { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 6px; font-variant-numeric: tabular-nums; }
 table.mini td { padding: 3px 4px; border-bottom: 1px solid var(--border); }
 table.mini td:not(:first-child) { text-align: right; }

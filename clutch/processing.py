@@ -95,6 +95,13 @@ def eeg_features(eeg_raw: np.ndarray, fs: float, names: list[str], notch_hz: flo
         ch = dict(quality[i])
         total = sum(powers[b][i] for b in BANDS) + 1e-12
         ch.update({b: round(float(powers[b][i] / total), 3) for b in BANDS})  # relative power
+        # Alpha share of 4-30 Hz power: leaves out <4 Hz, where blinks and eye movements put most of their
+        # energy, so a blink on the forehead channels does not drag the alpha value down.
+        mid = powers["theta"][i] + powers["alpha"][i] + powers["beta"][i] + 1e-12
+        ch["alphashare"] = round(float(powers["alpha"][i] / mid), 4)
+        # Absolute alpha power, log10(uV^2): blinks add almost nothing at 8-12 Hz, so this is the most
+        # blink-robust alpha measure when a channel is compared with itself within one session.
+        ch["alphalog"] = round(float(np.log10(powers["alpha"][i] + 1e-12)), 4)
         channels[name] = ch
         if quality[i]["q"] != "bad":
             usable_ratios.append(np.log10((powers["alpha"][i] + 1e-12) / (powers["beta"][i] + 1e-12)))

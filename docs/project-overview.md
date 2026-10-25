@@ -175,12 +175,20 @@ Then open http://localhost:8000.
 | Always-on-top widget, breathing screen, full pressure session | ⚠️ Not visually verified |
 | Garmin heart rate | ❌ Not started (watch model needed) |
 
+### Done on the morning of day 2 (25 October, without the headset, tested on the simulator)
+- **Per-sensor EEG:**
+  - log10 absolute alpha power per channel, each channel compared with itself;
+  - the model counts each modality (brain, heart, face) once;
+  - the profile shows a head map and a per-sensor table.
+  - Chosen after a comparison: relative alpha lost the forehead channels to blinks on simulated data; log absolute alpha kept them. On P01's real data, AF8 keeps d = 0.67. See `docs/methods.md`.
+- **Dataset:** per-channel columns (alphalog_*, alpha_*, beta_*, theta_*, q_*).
+- **Home page in 3 steps:** Connect → Calibrate → Live, with a ✓ on each step when it is ready.
+- **Chart comparing both scores live** (with headset solid, without headset dashed).
+- **Presentation mode** for the jury (P key or the "Present" button): two big scores, the sea, the comparison chart.
+- **Deterministic tests:** the simulator no longer depends on the PC's speed during tests.
+
 ### Next steps (day 2)
-1. **Per-sensor EEG** (decided, not yet built):
-   - compare each channel with itself between baseline and stress;
-   - use relative alpha (supported by the Vanhollebeke et al. 2022 meta-analysis) instead of alpha/beta;
-   - add a head map in the profile.
-   It adds dataset columns, so **do it before recording other participants**.
+1. **Check on the real headset** that the per-sensor profile and the head map behave as on the simulator.
 2. **Record the team:** about 4 people × 2 calibrations, Standard protocol, camera on, consent ticked, codes P2, P3… Then export and send.
 3. **Garmin:** enable heart-rate broadcast and add it as a Bluetooth heart-rate source that replaces the Muse PPG.
 4. **Demo prep:** headset score and headset-free score side by side, sea widget, pitch numbers from the recorded sessions.

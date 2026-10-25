@@ -37,17 +37,30 @@ from .processing import eeg_features, heart_rate, motion_level
 
 CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose data are collected
 # Expected direction under stress: +1 goes up, -1 goes down, 0 = learned per person from the calibration.
-#   eeg          log10(alpha/beta), down with stress (alpha suppression, Vanhollebeke et al., 2022)
+#   alpha_<ch>   log10 absolute alpha power (8-12 Hz) of ONE Muse channel, compared with itself between
+#                phases. Chosen over relative alpha because blinks barely touch 8-12 Hz: on simulated data
+#                with blinks, relative alpha lost the forehead channels (d ~ 0) while log alpha kept them.
+#                Alpha suppression is the most consistent EEG marker of acute stress (meta-analysis,
+#                Vanhollebeke et al., 2022); beta is not, so the alpha/beta ratio is no longer used.
 #   hr           heart rate in bpm (Muse PPG now, a Garmin watch later), up with stress
 #   face_*       MediaPipe blendshape means (0-1): brows lowered, lips pressed, eyes squinted, frown, smile
 #   blink_rate   blinks per minute, head_motion: head movement (face widths per second)
+EEG_CHANNELS = ("TP9", "AF7", "AF8", "TP10")
 SIGNALS = {
-    "eeg": -1, "hr": +1,
+    **{f"alpha_{ch}": -1 for ch in EEG_CHANNELS}, "hr": +1,
     "face_brow": +1, "face_press": +1, "face_squint": +1, "face_frown": +1, "face_smile": 0,
     "blink_rate": 0, "head_motion": +1,
 }
-HEADSET_SIGNALS = {"eeg"}  # left out of the "without headset" score
-MIN_SD = {"eeg": 0.05, "hr": 2.0, "blink_rate": 2.0, "head_motion": 0.005}  # floors on spreads
+# Each modality counts once in the score, whatever its number of signals (so 4 EEG channels or 7 face
+# indicators cannot outvote the heart). Inside a group, signals are averaged weighted by their effect size.
+GROUPS = {
+    "brain": [f"alpha_{ch}" for ch in EEG_CHANNELS],
+    "heart": ["hr"],
+    "face": ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"],
+}
+HEADSET_GROUPS = {"brain"}  # left out of the "without headset" score
+HEADSET_SIGNALS = set(GROUPS["brain"])
+MIN_SD = {"hr": 2.0, "blink_rate": 2.0, "head_motion": 0.005, **{s: 0.05 for s in GROUPS["brain"]}}  # brain: log10 units
 MIN_SD_FACE = 0.02
 
 
@@ -174,15 +187,24 @@ class StressModel:
             if pos is not None:
                 parts[name], weights[name] = pos, w
 
-        def combine(keys):
-            keys = [k for k in keys if k in parts]
-            if not keys:
-                return None
-            return float(np.clip(100 * sum(parts[k] * weights[k] for k in keys) / sum(weights[k] for k in keys), 0, 100))
+        def combine(groups):
+            num = den = 0.0
+            for g in groups:
+                keys = [k for k in GROUPS[g] if k in parts]
+                if not keys:
+                    continue
+                pos = sum(parts[k] * weights[k] for k in keys) / sum(weights[k] for k in keys)
+                gw = max(weights[k] for k in keys)  # the group's strongest responder sets its weight
+                num, den = num + pos * gw, den + gw
+            return float(np.clip(100 * num / den, 0, 100)) if den else None
 
-        full = self._smooth("full", combine(parts), dt)
-        body = self._smooth("body", combine([k for k in parts if k not in HEADSET_SIGNALS]), dt)
-        return full, body, {k: round(v, 2) for k, v in parts.items()}
+        full = self._smooth("full", combine(GROUPS), dt)
+        body = self._smooth("body", combine([g for g in GROUPS if g not in HEADSET_GROUPS]), dt)
+        out = {k: round(v, 2) for k, v in parts.items()}
+        brain = [k for k in GROUPS["brain"] if k in parts]
+        if brain:  # group position kept under "eeg" for loggers that read one brain value (clutch/face.py)
+            out["eeg"] = round(sum(parts[k] * weights[k] for k in brain) / sum(weights[k] for k in brain), 2)
+        return full, body, out
 
 
 class SessionLogger:
@@ -198,8 +220,11 @@ class SessionLogger:
     Times: `t` = seconds since the app started (same clock as events); `lsl_ts` = device timestamp.
     """
     FACE_COLS = ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"]
+    CHANNELS = ("TP9", "AF7", "AF8", "TP10")
+    CHANNEL_COLS = ([f"{b}_{ch}" for ch in CHANNELS for b in ("alpha", "beta", "theta", "alphashare", "alphalog")]
+                    + [f"q_{ch}" for ch in CHANNELS])
     METRIC_COLS = (["t", "phase", "stress", "stress_body", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
-                    "hr_bpm", "hr_quality", "motion", "usable_channels", "contact"] + FACE_COLS)
+                    "hr_bpm", "hr_quality", "motion", "usable_channels", "contact"] + FACE_COLS + CHANNEL_COLS)
 
     def __init__(self, root: Path):
         self.root = root
@@ -244,11 +269,19 @@ class SessionLogger:
                 [m["t"], m["phase"], m["stress"], m.get("stress_body"), m["z"].get("eeg"), m["z"].get("hr"),
                  eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
                  hr.get("bpm"), hr.get("quality"), m["motion"].get("level"),
-                 eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS])
+                 eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS]
+                + [self._channel(eeg, col) for col in self.CHANNEL_COLS])
             if time.time() - self._flushed > 2:  # keep the files on disk up to date
                 for fh in self._files.values():
                     fh.flush()
                 self._flushed = time.time()
+
+    @staticmethod
+    def _channel(eeg, col):
+        """Per-channel value for a column like alpha_AF8 (relative power) or q_AF8 (contact quality)."""
+        kind, ch = col.split("_", 1)
+        c = eeg.get("channels", {}).get(ch)
+        return None if c is None else c.get(kind)
 
     def event(self, t, phase, name, data):
         with self._lock:
@@ -369,7 +402,10 @@ class Engine:
             if motion["flag"]:
                 ratio = None  # head movement corrupts EEG; skip this window
             face = self._face if (self._face and time.time() - self._face_t < cfg.face_max_age_s) else None
-            values = {"eeg": ratio, "hr": hr["bpm"] if hr["quality"] >= cfg.min_hr_quality else None, **(face or {})}
+            # one value per EEG channel: relative alpha, only when that channel has acceptable contact
+            alphas = {f"alpha_{n}": (ch["alphalog"] if ch["q"] != "bad" and not motion["flag"] else None)
+                      for n, ch in feats.get("channels", {}).items()}
+            values = {**alphas, "hr": hr["bpm"] if hr["quality"] >= cfg.min_hr_quality else None, **(face or {})}
             self.model.collect(self.phase, values)
             full, body, z = self.model.score(values, cfg.tick_s)
             # Main score: with EEG when the headset streams, otherwise the headset-free score.
