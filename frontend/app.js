@@ -290,7 +290,6 @@ function updateLive(m, hr) {
   }
   $("brain-src").textContent = m.stress_brain_source ? `the teacher · ${m.stress_brain_source}` : "the teacher · needs the headset";
   $("body-src").textContent = m.stress_body_source ? `the student · ${m.stress_body_source}` : "the student · learns from the brain";
-  updateMatch();
 
   $("calib-note").hidden = !!m.calibrated;
   const err = $("engine-error");
@@ -310,23 +309,6 @@ function updateLive(m, hr) {
 }
 const BODY_COLOR = "#e08a3c";
 // With headset (solid, accent) and without headset (dashed, orange) over the last two minutes
-// How closely the student follows the teacher: correlation of the two scores over the last 2 minutes
-function updateMatch() {
-  const now = state.latest ? state.latest.t : 0;
-  const pts = state.live.filter((p) => p.t > now - 120 && p.brain != null && p.body != null);
-  const line = $("match-line");
-  line.hidden = pts.length < 40;  // at least 20 s of both
-  if (line.hidden) return;
-  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
-  const b = pts.map((p) => p.brain), h = pts.map((p) => p.body), mb = mean(b), mh = mean(h);
-  const cov = b.reduce((s, v, i) => s + (v - mb) * (h[i] - mh), 0);
-  const den = Math.sqrt(b.reduce((s, v) => s + (v - mb) ** 2, 0) * h.reduce((s, v) => s + (v - mh) ** 2, 0));
-  const r = den ? cov / den : 0;
-  const verdict = r >= 0.6 ? "follows the brain well" : r >= 0.3 ? "partly follows the brain" : "does not follow the brain yet";
-  line.className = `match ${r >= 0.6 ? "good" : r >= 0.3 ? "fair" : "bad"}`;
-  line.textContent = `Heart + face ${verdict}: r = ${r.toFixed(2)} over the last ${Math.round((pts[pts.length - 1].t - pts[0].t))} s`;
-}
-
 function drawScoresChart(canvas, seconds = 120, width = 2.5, fullColor = null) {
   const calibrated = state.latest && state.latest.calibrated;
   const now = state.latest ? state.latest.t : 0;

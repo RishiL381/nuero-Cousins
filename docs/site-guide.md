@@ -86,7 +86,6 @@ The page has four steps, shown top to bottom. A step turns green when it is done
 | **Brain (EEG)**, the teacher | the EEG part of your calibration: the teacher your heart + face model learned from, so the two curves can be compared. The shared trained brain model is used only when there is no calibration teacher. Only while the headset streams. |
 | **Heart + face**, the student | your **personal model**: at the end of your calibration it learns the weights that bring heart + face as close as possible to your EEG. Retrained after the study blocks. Fallbacks: the trained heart + face model, then the calibration rule. |
 | **Gauge** | the brain while the headset is on; the student once it is off |
-| **"Heart + face follows the brain: r = …"** | correlation of the two scores over the last 2 minutes. 1 = identical curves. Above 0.6, the watch and webcam can stand in for the headset. |
 | **Chart** | both scores over the last 2 minutes: brain solid, heart + face dashed |
 
 - The lines under each number say which model produced it.
