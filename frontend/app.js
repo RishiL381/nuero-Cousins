@@ -214,7 +214,7 @@ function updateWatch(w, hr) {
     ? "not sent by this device" : "—";
   $("watch-used").textContent = hr && hr.source === "watch" ? "✓ watch (replaces the Muse sensor)"
     : hr && hr.source === "muse" ? "Muse forehead sensor" : "—";
-  const on = ["searching", "connecting", "streaming"].includes(w.state);
+  const on = ["searching", "connecting", "streaming"].includes(w.state);  // the server stops after 3 failed tries
   $("watch-connect").disabled = on;
   $("watch-connect").textContent = w.state === "error" ? "Retry" : "Connect watch";
   $("watch-disconnect").disabled = w.state === "off";

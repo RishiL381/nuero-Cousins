@@ -30,21 +30,6 @@ mimetypes.add_type("text/javascript", ".mjs")
 mimetypes.add_type("application/wasm", ".wasm")
 
 
-SETTINGS = ROOT / "settings.local.json"  # remembered choices on this computer (not in git)
-
-
-def load_settings() -> dict:
-    try:
-        return json.loads(SETTINGS.read_text())
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def save_settings(**changes):
-    settings = {**load_settings(), **changes}
-    SETTINGS.write_text(json.dumps({k: v for k, v in settings.items() if v is not None}, indent=2))
-
-
 def create_app(engine: Engine) -> FastAPI:
     clients: set[WebSocket] = set()
     face_log = FaceLogger(engine.logger.root)
@@ -73,8 +58,6 @@ def create_app(engine: Engine) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         engine.start()
-        if load_settings().get("watch") is not None:  # the watch used last time
-            engine.watch.connect(load_settings()["watch"])
         task = asyncio.create_task(broadcast_loop())
         yield
         task.cancel()
@@ -120,11 +103,9 @@ def create_app(engine: Engine) -> FastAPI:
                 elif kind == "headset_disconnect" and hasattr(src, "headset"):
                     src.headset.disconnect()
                 elif kind == "watch_connect":
-                    engine.watch.connect(msg.get("name"))
-                    save_settings(watch=msg.get("name") or "")   # reconnect to it next time the app starts
+                    engine.watch.connect(msg.get("name"))  # on demand only: the watch serves one computer
                 elif kind == "watch_disconnect":
                     engine.watch.disconnect()
-                    save_settings(watch=None)
                 elif kind == "mock_stress" and isinstance(src, MockSource):
                     src.set_stress(msg.get("value"))
                 elif kind == "face_start":
