@@ -34,6 +34,7 @@ from pathlib import Path
 import numpy as np
 
 from .learned import LiveScorer, row_inputs
+from .personal import PersonalModel
 from .processing import eeg_features, heart_rate, motion_level
 from .watch import WatchHR
 
@@ -103,6 +104,7 @@ class StressModel:
     _ticks: dict = field(default_factory=_empty_ticks)   # same values, kept together per tick (flip check)
     _smoothed: dict = field(default_factory=dict)
     _dropped: dict = field(default_factory=dict)  # signal -> {reason: windows rejected during calibration}
+    personal: PersonalModel | None = None  # heart + face -> EEG stress, trained on this person's calibration
 
     @property
     def baseline(self):  # kept for callers that only need to know whether we are calibrated
@@ -224,13 +226,24 @@ class StressModel:
                "used_without_headset": [k for k in used if k not in HEADSET_SIGNALS],
                "signals": {k: {kk: (round(vv, 3) if isinstance(vv, float) else vv) for kk, vv in v.items()}
                            for k, v in signals.items() if v["n_rest"] or v["n_stress"] or "dropped" in v}}
+        if cal["ok"]:  # personal model: heart + face learn this person's EEG stress position
+            model, cal["personal"] = PersonalModel.fit(self._ticks, signals, GROUPS["brain"],
+                                                       [k for k in SIGNALS if k not in HEADSET_SIGNALS],
+                                                       MIN_SD, MIN_SD_FACE)
         self._samples, self._dropped = _empty_samples(), {}
         self._ticks = _empty_ticks()
         if cal["ok"]:
             self.calibration = cal
             self._signals = signals
+            self.personal = model
             self._smoothed = {}
         return cal
+
+    def personal_score(self, values: dict, dt):
+        """Personal model's 0-100 score from heart rate and face, None until it is trained."""
+        if self.personal is None:
+            return None
+        return self._smooth("personal", self.personal.predict(values), dt)
 
     def _position(self, name, x):
         """Where a value sits for this person: 0 = calm (rest anchor), 1 = stressed (stress anchor)."""
@@ -300,7 +313,7 @@ class SessionLogger:
     CHANNELS = ("TP9", "AF7", "AF8", "TP10")
     CHANNEL_COLS = ([f"{b}_{ch}" for ch in CHANNELS for b in ("alpha", "beta", "theta", "gamma", "alphashare", "alphalog")]
                     + [f"q_{ch}" for ch in CHANNELS] + [f"muscle_{ch}" for ch in CHANNELS])
-    METRIC_COLS = (["t", "phase", "stress", "stress_body", "stress_ml", "stress_ml_headset", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
+    METRIC_COLS = (["t", "phase", "stress", "stress_body", "stress_ml", "stress_ml_headset", "stress_personal", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
                     "hr_bpm", "hr_quality", "hr_source", "hrv_rmssd", "motion", "usable_channels", "contact"]
                    + FACE_COLS + CHANNEL_COLS)
 
@@ -344,7 +357,7 @@ class SessionLogger:
             contact = "".join(c["q"][0] for c in eeg.get("channels", {}).values())  # e.g. "ggfb"
             face = m.get("face") or {}
             self._writers["metrics.csv"].writerow(
-                [m["t"], m["phase"], m["stress"], m.get("stress_body"), m.get("stress_ml"), m.get("stress_ml_headset"), m["z"].get("eeg"), m["z"].get("hr"),
+                [m["t"], m["phase"], m["stress"], m.get("stress_body"), m.get("stress_ml"), m.get("stress_ml_headset"), m.get("stress_personal"), m["z"].get("eeg"), m["z"].get("hr"),
                  eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
                  hr.get("bpm"), hr.get("quality"), hr.get("source"), hr.get("rmssd"), m["motion"].get("level"),
                  eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS]
@@ -512,23 +525,26 @@ class Engine:
                       "hrv": hr.get("rmssd"), **(face or {})}
             self.model.collect(self.phase, values, dropped)
             full, body, z = self.model.score(values, cfg.tick_s)
+            personal = self.model.personal_score(values, cfg.tick_s)  # heart + face imitating the EEG, this calibration
             # Trained models (tools/train_model.py), when installed: heart + face, and with the headset (brain)
             inputs = row_inputs({**feats, "psd": psd}, hr, motion, face, cfg.min_hr_quality)
             ml = self.learned.update(cfg.tick_s, self.phase, inputs) if self.learned else None
             ml_headset = self.learned_headset.update(cfg.tick_s, self.phase, inputs) if self.learned_headset else None
             # Main score: the trained brain model while the headset streams, else the calibration rule with the
-            # EEG; without the headset, the trained heart + face model, else the calibration rule on heart + face.
+            # EEG; without the headset, the personal model from this calibration, the trained heart + face model,
+            # else the calibration rule on heart + face.
             headset_on = eeg is not None and feats.get("usable", 0) > 0
             stress, source = next(((v, name) for v, name in (
                 (ml_headset if headset_on else None, "trained brain model"),
                 (full if headset_on else None, "calibration (brain + heart + face)"),
+                (personal, "personal heart + face model (this calibration)"),
                 (ml, "trained heart + face model"),
                 (body, "calibration (heart + face)")) if v is not None), (None, None))
             self.seq += 1
             m = {
                 "type": "metrics", "seq": self.seq, "t": self.now(), "phase": self.phase,
                 "stress": stress, "stress_source": source, "stress_body": body, "stress_ml": ml,
-                "stress_ml_headset": ml_headset,
+                "stress_ml_headset": ml_headset, "stress_personal": personal,
                 "learned": self.learned.info if self.learned else None,
                 "learned_headset": self.learned_headset.info if self.learned_headset else None,
                 "calibrated": self.model.calibration is not None,

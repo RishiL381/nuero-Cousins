@@ -147,6 +147,33 @@ def test_muscle_tension_is_flagged_and_excluded():
     assert "alpha_AF7" not in cal["used"] and af7["dropped"] == {"muscle": 100} and "muscle" in af7["note"], af7
 
 
+
+def test_personal_model_trains_at_calibration_end():
+    out, eng = simulate([("calib_rest", 60), ("calib_stress", 60), ("calibration_check", 1),
+                         ("round1", 60), ("reset", 60)], with_face=True)
+    pm = eng.model.calibration["personal"]
+    print("personal model:", pm)
+    assert pm["ok"] and "hr" in pm["features"] and "face_brow" in pm["features"], pm
+    assert not any(k.startswith("alpha_") for k in pm["features"])
+    assert all(m["stress_personal"] is None for m in out["calib_stress"])  # not trained before the check
+
+    def late(phase):
+        return float(np.mean([m["stress_personal"] for m in out[phase][-60:] if m["stress_personal"] is not None]))
+    print(f"personal model: round1={late('round1'):.0f} reset={late('reset'):.0f}")
+    assert late("round1") > 60 and late("reset") < 30
+
+
+def test_personal_model_needs_heart_or_face():
+    rng = np.random.default_rng(4)
+    model = StressModel(Config())
+    for _ in range(40):  # EEG only: there is a target but nothing to learn it from
+        model.collect("calib_rest", {"alpha_AF8": 1.0 + rng.normal(0, 0.05)})
+        model.collect("calib_stress", {"alpha_AF8": 0.7 + rng.normal(0, 0.05)})
+    cal = model.finalize()
+    assert cal["ok"] and not cal["personal"]["ok"] and model.personal is None, cal["personal"]
+    assert model.personal_score({"hr": 80}, 0.5) is None
+
+
 def test_trained_model_scores_live():
     from sklearn.ensemble import HistGradientBoostingClassifier
     rng = np.random.default_rng(0)
