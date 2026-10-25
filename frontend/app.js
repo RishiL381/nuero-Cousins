@@ -113,6 +113,10 @@ const handlers = {
   },
   baseline(m) {
     state.baseline = m.baseline;
+    const pm = m.baseline && m.baseline.personal;
+    if (state.phase === "study_done" && pm && pm.ok) {  // personal model retrained at the end of the study
+      $("study-lead").textContent += ` Your personal model was retrained on ${Math.round(pm.seconds / 60)} min of data.`;
+    }
     if (state.baselineWaiter) { state.baselineWaiter(m.baseline); state.baselineWaiter = null; }
   },
   session(m) {

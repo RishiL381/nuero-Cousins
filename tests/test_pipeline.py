@@ -152,6 +152,21 @@ def test_personal_model_trains_at_calibration_end():
     assert late("round1") > 60 and late("reset") < 30
 
 
+
+def test_personal_model_retrains_after_study():
+    out, eng = simulate([("calib_rest", 60), ("calib_stress", 60), ("calibration_check", 1),
+                         ("study_relax", 60), ("study_math_easy", 60), ("study_math_hard", 60), ("study_done", 1),
+                         ("round1", 60), ("reset", 60)], with_face=True)
+    pm = eng.model.calibration["personal"]
+    print("retrained personal model:", pm["seconds"], "s on", pm["phases"])
+    assert pm["ok"] and "study_math_hard" in pm["phases"] and pm["seconds"] > 150, pm
+    assert eng.pending_baseline is None or eng.pending_baseline["personal"] is pm
+
+    def late(phase):
+        return float(np.mean([m["stress_personal"] for m in out[phase][-60:] if m["stress_personal"] is not None]))
+    print(f"retrained personal model: round1={late('round1'):.0f} reset={late('reset'):.0f}")
+    assert late("round1") > 60 and late("reset") < 30
+
 def test_personal_model_needs_heart_or_face():
     rng = np.random.default_rng(4)
     model = StressModel(Config())
