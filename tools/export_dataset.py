@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 from clutch.learned import LABELS  # noqa: E402  (0 = calm, 1 = stressed, other phases unlabelled)
 FEATURE_COLS = ["t", "phase", "label", "alpha", "beta", "theta", "ratio_log", "hr_bpm", "hr_quality", "hr_source", "hrv_rmssd", "motion",
                 "usable_channels", "contact", "face_brow", "face_press", "face_squint", "face_frown", "face_smile",
-                "blink_rate", "head_motion", "stress", "stress_body", "stress_ml", "stress_ml_headset"] + \
+                "blink_rate", "head_motion", "stress", "stress_body", "stress_ml", "stress_ml_headset", "stress_personal"] + \
                [f"{b}_{ch}" for ch in ("TP9", "AF7", "AF8", "TP10")
                 for b in ("alpha", "beta", "theta", "gamma", "alphashare", "alphalog")] + \
                [f"{k}_{ch}" for k in ("q", "muscle") for ch in ("TP9", "AF7", "AF8", "TP10")]

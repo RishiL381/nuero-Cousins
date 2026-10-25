@@ -264,6 +264,13 @@ function updateLive(m, hr) {
     const b = m.stress_body == null ? null : Math.round(m.stress_body);
     el.textContent = b ?? "—"; el.style.color = stressColor(b);
   });
+  const pm = $("personal-score"), pr = state.baseline && state.baseline.personal;
+  pm.hidden = !(pr && pr.ok);
+  if (pr && pr.ok) {
+    const v = m.stress_personal == null ? null : Math.round(m.stress_personal);
+    const el = pm.querySelector("b");
+    el.textContent = v ?? "—"; el.style.color = stressColor(v);
+  }
   for (const [id, info, value] of [["ml-score", m.learned, m.stress_ml], ["ml-score-headset", m.learned_headset, m.stress_ml_headset]]) {
     const line = $(id);
     line.hidden = !info;
@@ -963,6 +970,13 @@ function renderCalibrationReport(cal, extra) {
     <p class="verdict ${noHeadset.length ? "used" : "unused"}">${noHeadset.length
       ? "✓ " + noHeadset.map((k) => SIGNAL_NAMES[k] || FACE_LABELS[k] || k).join(", ")
       : "✗ Only the EEG reacted: the headset-free score is not available yet"}</p></div>`;
+  // Personal model: heart + face trained on this calibration to predict the EEG stress position (clutch/personal.py)
+  const pm = cal && cal.personal;
+  const personalCard = !pm ? "" : `<div class="sig-card"><h3>Your personal model</h3>
+    <div class="muted small">heart + face trained to predict your EEG stress</div>
+    <div class="vals">${pm.ok ? `${pm.seconds} s` : "—"}</div>
+    ${pm.ok ? `<div class="muted small">${pm.features.map((k) => `${SIGNAL_NAMES[k] || FACE_LABELS[k] || k} ${pm.weights[k] > 0 ? "+" : ""}${pm.weights[k].toFixed(2)}`).join(" · ")}<br>fit on this calibration r = ${pm.fit_r.toFixed(2)}</div>` : ""}
+    <p class="verdict ${pm.ok && !pm.weak_target ? "used" : "unused"}">${pm.ok ? (pm.weak_target ? "✓ Trained, but " : "✓ ") + pm.note : "✗ Not trained: " + pm.note}</p></div>`;
   // Flip check: anchors from the first half of rest and stress, tested on the second half (engine.split_half_check)
   const chk = cal && cal.check;
   let checkCard = "";
@@ -979,7 +993,7 @@ function renderCalibrationReport(cal, extra) {
     brainCard(sig, cal) +
     card("hr", "Heart rate", (v) => Math.round(v), " bpm") +
     (sig.hrv ? card("hrv", "Heart rate variability (RMSSD)", (v) => Math.round(v), " ms") : "") +
-    faceCard + bodyCard + selfCard;
+    faceCard + bodyCard + personalCard + selfCard;
 
   let lead, summary;
   if (!cal || !cal.ok) {
