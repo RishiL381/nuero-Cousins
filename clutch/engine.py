@@ -39,6 +39,13 @@ from .processing import eeg_features, heart_rate, motion_level
 from .watch import WatchHR
 
 CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose data are collected
+PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"  # saved calibrations, per person (not in git)
+
+
+def _json_default(o):
+    """numpy numbers and booleans in a calibration -> plain JSON."""
+    return o.item() if hasattr(o, "item") else str(o)
+
 # Study protocol blocks (headset on): added to the personal model's training data, retrained at study_done
 STUDY_PHASES = ("study_relax", "study_math_easy", "study_math_hard", "study_stroop_hard")
 # Expected direction under stress: +1 goes up, -1 goes down, 0 = learned per person from the calibration.
@@ -280,6 +287,17 @@ class StressModel:
         return PersonalModel.fit(ticks, signals, GROUPS["brain"], [k for k in SIGNALS if k not in HEADSET_SIGNALS],
                                  MIN_SD, MIN_SD_FACE)
 
+    def state(self) -> dict:
+        """What a saved profile needs to score live again without recalibrating."""
+        return {"calibration": self.calibration, "signals": self._signals, "iaf": self.iaf,
+                "personal": self.personal.to_dict() if self.personal else None}
+
+    def restore(self, saved: dict):
+        """Back to a saved profile's calibration: EEG anchors and IAF (the teacher) and the personal model."""
+        self.calibration, self._signals, self.iaf = saved["calibration"], saved["signals"], saved.get("iaf")
+        self.personal = PersonalModel.from_dict(saved["personal"]) if saved.get("personal") else None
+        self._smoothed, self._calib_ticks, self._study_ticks = {}, {}, {}
+
     def retrain_personal(self):
         """End of a study protocol: retrain the personal model on the calibration plus the study blocks.
         Returns the updated calibration, or None when there is nothing new to train on."""
@@ -490,6 +508,7 @@ class Engine:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self.pending_baseline = None  # set when calibration ends, picked up by the server
+        self.profile = None           # name typed in step 2: the calibration is saved under it (profiles/)
         self._face, self._face_t = None, 0.0
         self.watch = WatchHR()  # Garmin or any BLE heart rate device; replaces the Muse PPG while it streams
         self.watch.on_sample = lambda wall, bpm, rr: self.logger.watch(round(wall - self.t0, 3), bpm, rr)
@@ -529,11 +548,54 @@ class Engine:
             self.source.on_phase(phase)
             if phase == "calibration_check":  # the client says the calibration protocol is over
                 self.pending_baseline = self.model.finalize()
+                if self.pending_baseline.get("ok"):
+                    self.save_profile()
             elif phase == "study_done":  # retrain the personal model on everything recorded since calibration
                 updated = self.model.retrain_personal()
                 if updated is not None:
                     self.pending_baseline = updated
+                    self.save_profile()
             self.logger.event(self.now(), phase, "phase", {})
+
+    # ---------- Profiles: one saved calibration per person, reloaded without recalibrating ----------
+    @staticmethod
+    def _profile_file(name: str) -> Path:
+        safe = "".join(ch for ch in name.strip() if ch.isalnum() or ch in "-_ ").strip().replace(" ", "_")
+        return PROFILES_DIR / f"{safe or 'anon'}.json"
+
+    def save_profile(self):
+        if not self.profile or self.model.calibration is None:
+            return
+        PROFILES_DIR.mkdir(exist_ok=True)
+        data = {"name": self.profile, "saved_at": time.strftime("%Y-%m-%d %H:%M"), **self.model.state()}
+        self._profile_file(self.profile).write_text(json.dumps(data, default=_json_default))
+
+    def load_profile(self, name: str) -> dict | None:
+        path = self._profile_file(name)
+        if not path.exists():
+            return None
+        saved = json.loads(path.read_text())
+        with self._lock:
+            self.model.restore(saved)
+            self.profile = saved["name"]
+            self.pending_baseline = saved["calibration"]  # the page shows it as the current calibration
+        return saved
+
+    @staticmethod
+    def list_profiles() -> list[dict]:
+        out = []
+        for path in sorted(PROFILES_DIR.glob("*.json")) if PROFILES_DIR.exists() else []:
+            try:
+                d = json.loads(path.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            cal = d.get("calibration") or {}
+            used = cal.get("used", [])
+            out.append({"name": d.get("name", path.stem), "saved_at": d.get("saved_at"), "iaf": d.get("iaf"),
+                        "brain_signals": sum(k.split("_")[0] in BRAIN_BANDS for k in used),
+                        "student": bool((d.get("personal") or {}).get("features")),
+                        "check": (cal.get("check") or {}).get("passed")})
+        return sorted(out, key=lambda p: p["saved_at"] or "", reverse=True)
 
     def _run(self):
         src, cfg = self.source, self.cfg

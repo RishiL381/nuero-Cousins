@@ -125,6 +125,13 @@ const handlers = {
       $("study-lead").textContent += ` Your personal model was retrained on ${Math.round(pm.seconds / 60)} min of data.`;
     }
     if (state.baselineWaiter) { state.baselineWaiter(m.baseline); state.baselineWaiter = null; }
+    setTimeout(loadProfiles, 500);  // a calibration was just saved under the participant's name
+  },
+  profile_loaded(m) {
+    $("profile-msg").textContent = m.ok
+      ? `Loaded ${m.name}'s calibration (${m.saved_at}). Go to Live: no need to calibrate again.`
+      : `No saved calibration for ${m.name}.`;
+    if (m.ok) $("ds-participant").value = m.name;
   },
   session(m) {
     if (state.session) state.session.dir = m.dir;
@@ -1051,6 +1058,7 @@ function renderCalibrationReport(cal, extra) {
 // Its recording stops as soon as the protocol ends (not when the profile screen is closed).
 async function calibrate({ standalone = false } = {}) {
   const p = protocol();
+  send({ type: "profile", name: $("ds-participant").value.trim() });  // saved under this name when it ends
   const recording = standalone && $("ds-record").checked;
   for (let attempt = 0; ; attempt++) {
     if (recording && attempt > 0) send({ type: "session_start", meta: datasetMeta("calibration") }); // redo = new session
@@ -1457,6 +1465,19 @@ $("btn-desk").onclick = async () => {
   msg.hidden = false;
   msg.textContent = j.error || (j.started ? "The boat is on your desktop (bottom of the screen)." : "The boat is already on your desktop.");
 };
+// ---------- Profiles: one saved calibration per person ----------
+async function loadProfiles() {
+  let data;
+  try { data = await (await fetch("/api/profiles")).json(); } catch { return; }
+  const pick = $("profile-pick"), list = data.profiles || [];
+  pick.innerHTML = list.length
+    ? list.map((p) => `<option value="${p.name.replace(/"/g, "&quot;")}">${p.name} · ${p.saved_at}` +
+        `${p.iaf ? ` · alpha ${p.iaf.toFixed(1)} Hz` : ""} · ${p.brain_signals} EEG signals${p.student ? " · student ✓" : ""}</option>`).join("")
+    : `<option value="">No saved profile yet</option>`;
+  $("profile-load").disabled = !list.length;
+}
+$("profile-load").onclick = () => { const n = $("profile-pick").value; if (n) send({ type: "profile_load", name: n }); };
+loadProfiles();
 $("watch-connect").onclick = () => send({ type: "watch_connect", name: $("watch-name").value.trim() });
 $("watch-disconnect").onclick = () => send({ type: "watch_disconnect" });
 $("watch-name").onkeydown = (e) => { if (e.key === "Enter") $("watch-connect").click(); };

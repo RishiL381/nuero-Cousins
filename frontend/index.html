@@ -120,9 +120,15 @@
                 <option value="serial">Count down 1022 − 13 (hardest)</option>
               </select>
             </label>
-            <label>Participant code
-              <input id="ds-participant" type="text" placeholder="e.g. P1 (no real names)" autocomplete="off">
+            <label>Name (your profile)
+              <input id="ds-participant" type="text" placeholder="e.g. Clément" autocomplete="off">
             </label>
+            <label>Saved profiles
+              <span class="profile-row"><select id="profile-pick"><option value="">No saved profile yet</option></select>
+                <button id="profile-load" type="button">Load</button></span>
+            </label>
+            <p class="hint profile-msg" id="profile-msg">Each calibration is saved under your name, on this computer only.
+              Load it next time to skip the calibration.</p>
             <div class="calib-checks">
               <label class="check"><input type="checkbox" id="ds-record" checked> Record for the dataset</label>
               <label class="check"><input type="checkbox" id="ds-consent"> The participant agrees that their anonymised

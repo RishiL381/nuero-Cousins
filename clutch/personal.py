@@ -78,6 +78,17 @@ class PersonalModel:
                            else "retrained on the calibration and the study blocks")}
         return cls(feats, centers, scales, w, b, report), report
 
+    def to_dict(self) -> dict:
+        """JSON-safe copy, for saved profiles."""
+        return {"features": list(self.features), "centers": [float(v) for v in self.centers],
+                "scales": [float(v) for v in self.scales], "weights": [float(v) for v in self.weights],
+                "intercept": float(self.intercept), "report": self.report}
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        return cls(d["features"], np.array(d["centers"]), np.array(d["scales"]), np.array(d["weights"]),
+                   float(d["intercept"]), d["report"])
+
     def predict(self, values: dict):
         """0-100 from heart rate and face values, None when none of the model's features is available."""
         if not any(values.get(k) is not None for k in self.features):

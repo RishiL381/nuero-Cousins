@@ -50,7 +50,10 @@ The page has four steps, shown top to bottom. A step turns green when it is done
 ## 3. Step 2: Calibrate and record
 
 **Fields**
-- **Participant code:** use the same code for every session of the same person, and no real names.
+- **Name (your profile):** the person's name or code.
+  - Each successful calibration is saved under it in `profiles/`, on this computer only (never pushed). It is saved again after the study blocks.
+  - **Saved profiles → Load** restores that person's calibration (EEG teacher, alpha frequency, personal heart + face model) without calibrating again. Several people can use the app one after the other: load your profile before starting.
+  - The dataset export still replaces names with P01, P02…
 - **Record for the dataset** and **consent:** both must be ticked. Without consent, the session is never exported.
 - **Protocol:** Standard for real data, Short for a demo.
 - **Stress test:** quick math (default), colour words (Stroop) or serial subtraction.

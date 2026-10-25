@@ -483,3 +483,8 @@ button.primary { color: var(--on-accent); }
 .duo-item small { font-size: 0.72rem; color: var(--muted); }
 .match { margin: 6px 0 0; font-size: 0.85rem; font-weight: 500; }
 .match.good { color: var(--good); } .match.fair { color: var(--fair); } .match.bad { color: var(--bad); }
+
+/* Step 2: saved profiles */
+.profile-row { display: flex; gap: 8px; }
+.profile-row select { flex: 1; min-width: 0; }
+.profile-msg { grid-column: 1 / -1; margin: 0 0 6px; }

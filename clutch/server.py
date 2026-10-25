@@ -107,6 +107,13 @@ def create_app(engine: Engine) -> FastAPI:
                     src.headset.connect(msg.get("name"))
                 elif kind == "headset_disconnect" and hasattr(src, "headset"):
                     src.headset.disconnect()
+                elif kind == "profile":  # name typed in step 2: the next calibration is saved under it
+                    engine.profile = (msg.get("name") or "").strip() or None
+                elif kind == "profile_load":
+                    saved = engine.load_profile(msg.get("name") or "")
+                    await ws.send_text(json.dumps({"type": "profile_loaded", "name": msg.get("name"),
+                                                   "ok": saved is not None,
+                                                   "saved_at": saved and saved.get("saved_at")}))
                 elif kind == "watch_connect":
                     engine.watch.connect(msg.get("name"))  # on demand only: the watch serves one computer
                 elif kind == "watch_disconnect":
@@ -150,6 +157,10 @@ def create_app(engine: Engine) -> FastAPI:
 
     # ---------- Dataset and model (step 4 of the home page) ----------
     jobs = Jobs()
+
+    @app.get("/api/profiles")
+    async def profiles():
+        return {"profiles": engine.list_profiles(), "current": engine.profile}
 
     @app.get("/api/training")
     async def training_status():

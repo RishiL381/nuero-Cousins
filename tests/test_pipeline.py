@@ -116,6 +116,23 @@ def test_headset_free_score_from_face_and_heart():
     assert b1 > 60 and bs < 25
 
 
+def test_profile_saves_and_reloads_the_calibration():
+    """A profile (JSON on disk) restored in a fresh model must score exactly like the calibration it came from."""
+    import json
+    from clutch.engine import _json_default
+    _, eng = simulate([("calib_rest", 60), ("calib_stress", 60), ("calib_recovery", 20), ("calibration_check", 1)],
+                      with_face=True)
+    saved = json.loads(json.dumps(eng.model.state(), default=_json_default))
+    fresh = StressModel(Config())
+    fresh.restore(saved)
+    assert fresh.iaf == eng.model.iaf and fresh.personal is not None
+    values = {k: v["stress"] for k, v in eng.model._signals.items() if "stress" in v}  # a "stressed" moment
+    eng.model._smoothed = {}  # same starting point: no smoothing history
+    a, b = eng.model.score(values, 0.5), fresh.score(values, 0.5)
+    assert a[:2] == b[:2] and a[0] > 60, (a, b)
+    assert eng.model.personal.predict(values) == fresh.personal.predict(values)
+
+
 def test_individual_alpha_frequency():
     from clutch.processing import individual_alpha_frequency, iaf_bands
     freqs = np.arange(1, 45.5, 0.5)
@@ -215,6 +232,7 @@ def test_trained_model_scores_live():
 
 
 if __name__ == "__main__":
+    test_profile_saves_and_reloads_the_calibration()
     test_individual_alpha_frequency()
     test_muscle_tension_is_flagged_and_excluded()
     test_trained_model_scores_live()
