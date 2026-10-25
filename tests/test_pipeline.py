@@ -151,6 +151,15 @@ def test_trained_model_scores_live():
     print(f"trained model: round1={late('round1'):.0f} reset={late('reset'):.0f}")
     assert late("round1") > 60 and late("reset") < 40
 
+    # teacher model: a regressor imitating an EEG index, scaled so rest = 0 and stress = 1
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    teacher = {"model": HistGradientBoostingRegressor(max_iter=50).fit(X, 0.3 * y), "kind": "teacher",
+               "scale": (0.0, 0.3), "features": ["hr"], "trained_on": ["synthetic"], "cv_auc": 1.0}
+    out, _ = simulate([("calib_rest", 60), ("calib_stress", 60), ("calibration_check", 1),
+                       ("round1", 60), ("reset", 60)], learned=LiveScorer(teacher))
+    print(f"teacher model: round1={late('round1'):.0f} reset={late('reset'):.0f}")
+    assert late("round1") > 60 and late("reset") < 40
+
 
 if __name__ == "__main__":
     test_muscle_tension_is_flagged_and_excluded()

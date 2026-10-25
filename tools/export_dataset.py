@@ -19,7 +19,8 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-LABELS = {"calib_rest": 0, "calib_stress": 1}   # everything else is left unlabelled (empty)
+# Everything else is left unlabelled (empty), including study_math_easy, the in-between control block.
+LABELS = {"calib_rest": 0, "calib_stress": 1, "study_relax": 0, "study_math_hard": 1, "study_stroop_hard": 1}
 FEATURE_COLS = ["t", "phase", "label", "alpha", "beta", "theta", "ratio_log", "hr_bpm", "hr_quality", "motion",
                 "usable_channels", "contact", "face_brow", "face_press", "face_squint", "face_frown", "face_smile",
                 "blink_rate", "head_motion", "stress", "stress_body", "stress_ml"] + \

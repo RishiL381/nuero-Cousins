@@ -44,7 +44,7 @@ sessions/<id>/     raw data per session
 |---|---|
 | participant, session | anonymised IDs (P01, P01_S01) |
 | t, phase | session clock and protocol phase |
-| label | **0 = rest, 1 = stress**, empty = other phase |
+| label | **0 = rest** (calib_rest, study_relax), **1 = stress** (calib_stress, study_math_hard, study_stroop_hard), empty = other phase (study_math_easy is the in-between control) |
 
 **EEG (Muse)**
 

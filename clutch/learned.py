@@ -81,7 +81,8 @@ class LiveScorer:
         self.idx = [ALL_FEATURES.index(k) for k in self.features]
         self.baseline_s = bundle.get("baseline_s", BASELINE_S)
         self.smooth_s = bundle.get("smooth_s", SMOOTH_S)
-        self.info = {k: bundle.get(k) for k in ("name", "trained_on", "cv_auc", "validation")}
+        self.kind, self.scale = bundle.get("kind", "label"), bundle.get("scale")
+        self.info = {k: bundle.get(k) for k in ("name", "kind", "trained_on", "cv_auc", "validation")}
         self._rest_t0 = None
         self._base_rows = []
         self.baseline = None
@@ -119,4 +120,9 @@ class LiveScorer:
         x = window_mean([r for _, r in self._recent])[self.idx]
         if np.all(np.isnan(x)):
             return None
-        return round(100 * float(self.model.predict_proba(x.reshape(1, -1))[0, 1]), 1)
+        if self.kind == "teacher":  # regressor imitating the EEG index, scaled between rest (0) and stress (1)
+            r, s = self.scale
+            pos = (float(self.model.predict(x.reshape(1, -1))[0]) - r) / (s - r)
+        else:
+            pos = float(self.model.predict_proba(x.reshape(1, -1))[0, 1])
+        return round(float(np.clip(100 * pos, 0, 100)), 1)
