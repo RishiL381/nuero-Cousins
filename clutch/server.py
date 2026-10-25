@@ -18,6 +18,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 from .engine import Config, Engine
+from .face import FaceLogger
 from .sources import MUSE_BOARDS, LslSource, MockSource, MuseSource
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +29,8 @@ mimetypes.add_type("application/wasm", ".wasm")
 
 def create_app(engine: Engine) -> FastAPI:
     clients: set[WebSocket] = set()
+    face_log = FaceLogger(engine.logger.root)
+    face_owner: list = [None]  # the face tracker tab that is recording
 
     async def broadcast_loop():
         last_seq = 0
@@ -55,9 +58,16 @@ def create_app(engine: Engine) -> FastAPI:
         task = asyncio.create_task(broadcast_loop())
         yield
         task.cancel()
+        face_log.stop()
         engine.stop()
 
     app = FastAPI(lifespan=lifespan)
+
+    @app.middleware("http")
+    async def no_stale_frontend(request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-cache"  # browsers revalidate, so edits show up on reload
+        return response
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket):
@@ -91,10 +101,26 @@ def create_app(engine: Engine) -> FastAPI:
                     src.headset.disconnect()
                 elif kind == "mock_stress" and isinstance(src, MockSource):
                     src.set_stress(msg.get("value"))
+                elif kind == "face_start":
+                    path = face_log.start(engine.logger.dir, msg.get("meta", {}),
+                                          msg.get("feature_cols", []), msg.get("blendshape_cols", []))
+                    face_owner[0] = ws
+                    await ws.send_text(json.dumps({"type": "face_recording", "dir": str(path), "rows": 0}))
+                elif kind == "face" and face_owner[0] is ws:
+                    face_log.write(engine.now(), engine.phase, engine.latest, msg)
+                    if msg.get("row") is not None:
+                        await ws.send_text(json.dumps({"type": "face_recording", "dir": str(face_log.dir), "rows": face_log.rows}))
+                elif kind == "face_stop" and face_owner[0] is ws:
+                    face_log.stop()
+                    face_owner[0] = None
+                    await ws.send_text(json.dumps({"type": "face_recording", "dir": None}))
         except WebSocketDisconnect:
             pass
         finally:
             clients.discard(ws)
+            if face_owner[0] is ws:
+                face_log.stop()
+                face_owner[0] = None
 
     app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True), name="frontend")
     return app
