@@ -59,6 +59,8 @@ class Config:
     tick_s: float = 0.5
     smooth_tau_s: float = 5.0
     min_effect: float = 0.5            # Cohen's d needed to use a signal (medium effect, Cohen 1988)
+    check_min_auc: float = 0.75        # flip check: second-half stress must outrank second-half rest...
+    check_min_gap: float = 0.2         # ...by a visible gap on the 0-1 scale
     min_hr_quality: float = 0.5
     face_max_age_s: float = 2.0        # face features older than this are ignored
     notch_hz: float = 60.0             # mains frequency: 60 Hz in the US, 50 Hz in Europe
@@ -68,11 +70,22 @@ def _empty_samples():
     return {p: {k: [] for k in SIGNALS} for p in CALIB_PHASES}
 
 
+def _empty_ticks():
+    return {p: [] for p in CALIB_PHASES}
+
+
+def _auc(pos, neg) -> float:
+    """Probability that a random value of pos is above a random value of neg (ties count half)."""
+    p, n = np.asarray(pos, float)[:, None], np.asarray(neg, float)[None, :]
+    return float((p > n).mean() + 0.5 * (p == n).mean())
+
+
 @dataclass
 class StressModel:
     cfg: Config
     calibration: dict | None = None
     _samples: dict = field(default_factory=_empty_samples)
+    _ticks: dict = field(default_factory=_empty_ticks)   # same values, kept together per tick (flip check)
     _smoothed: dict = field(default_factory=dict)
 
     @property
@@ -83,11 +96,56 @@ class StressModel:
         """values: signal name -> current value (None or missing = not available this tick)."""
         if phase not in self._samples:
             return
+        tick = {}
         for name, x in values.items():
             if name in SIGNALS and x is not None:
                 self._samples[phase][name].append(float(x))
+                tick[name] = float(x)
+        self._ticks[phase].append(tick)
+
+    def split_half_check(self) -> dict:
+        """Flip check: does this calibration point the right way for this person?
+        Anchors are rebuilt from the FIRST half of rest and stress only (same rules as finalize: a signal
+        needs a medium effect, weighted by Cohen's d), then the combined score is computed on the SECOND
+        half, which the anchors never saw. Passes when second-half stress ranks above second-half rest
+        (AUC >= check_min_auc) with a visible gap (median difference >= check_min_gap on the 0-1 scale).
+        On EPIStress (17 people), demos worked for 90% of people whose check passed vs 82% overall."""
+        rest, stress = self._ticks["calib_rest"], self._ticks["calib_stress"]
+        if len(rest) < 20 or len(stress) < 20:
+            return {"passed": None, "note": "calibration too short to check"}
+        hr_, hs = len(rest) // 2, len(stress) // 2
+        anchors = {}
+        for name, expected in SIGNALS.items():
+            r = [t[name] for t in rest[:hr_] if name in t]
+            s = [t[name] for t in stress[:hs] if name in t]
+            if len(r) < 5 or len(s) < 5:
+                continue
+            rm, sm = float(np.median(r)), float(np.median(s))
+            pooled = max(math.sqrt((np.var(r) + np.var(s)) / 2), MIN_SD.get(name, MIN_SD_FACE))
+            direction = expected if expected != 0 else (1 if sm >= rm else -1)
+            d = direction * (sm - rm) / pooled
+            if d >= self.cfg.min_effect and sm != rm:
+                anchors[name] = (rm, sm, min(d, 2.0))
+        if not anchors:
+            return {"passed": False, "note": "no signal reacted in the first half of the calibration"}
+
+        def position(t):
+            ps = [(float(np.clip((t[k] - rm) / (sm - rm), -0.5, 1.5)), w) for k, (rm, sm, w) in anchors.items() if k in t]
+            return sum(p * w for p, w in ps) / sum(w for _, w in ps) if ps else None
+
+        pr = [p for p in map(position, rest[hr_:]) if p is not None]
+        ps = [p for p in map(position, stress[hs:]) if p is not None]
+        if len(pr) < 5 or len(ps) < 5:
+            return {"passed": False, "note": "not enough clean signal in the second half"}
+        auc, gap = _auc(ps, pr), float(np.median(ps) - np.median(pr))
+        passed = auc >= self.cfg.check_min_auc and gap >= self.cfg.check_min_gap
+        note = ("second half sorted correctly" if passed else
+                "score points the wrong way on the second half" if gap < 0 else
+                "second half not clearly separated")
+        return {"passed": passed, "auc": round(auc, 2), "gap": round(gap, 2), "signals": sorted(anchors), "note": note}
 
     def finalize(self) -> dict:
+        check = self.split_half_check()
         rest, stress = self._samples["calib_rest"], self._samples["calib_stress"]
         signals = {}
         for name, expected in SIGNALS.items():
@@ -131,11 +189,12 @@ class StressModel:
         else:
             mode, confidence = None, None
 
-        cal = {"ok": mode is not None, "mode": mode, "confidence": confidence, "used": used,
+        cal = {"ok": mode is not None, "mode": mode, "confidence": confidence, "used": used, "check": check,
                "used_without_headset": [k for k in used if k not in HEADSET_SIGNALS],
                "signals": {k: {kk: (round(vv, 3) if isinstance(vv, float) else vv) for kk, vv in v.items()}
                            for k, v in signals.items() if v["n_rest"] or v["n_stress"]}}
         self._samples = _empty_samples()
+        self._ticks = _empty_ticks()
         if cal["ok"]:
             self.calibration = cal
             self._signals = signals

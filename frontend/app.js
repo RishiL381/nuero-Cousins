@@ -13,10 +13,12 @@ const PROTOCOLS = QUICK
 const PER_PROBLEM_S = 6;  // time limit per arithmetic problem under pressure
 const BREATH_HALF_S = 5;  // 5 s in + 5 s out = 6 breaths per minute
 const SUB_START = 1022, SUB_STEP = 13; // serial subtraction stressor (Trier Social Stress Test style)
-const PHASE_COLORS = { calib_rest: "#8a96a3", calib_stress: "#e08a3c", calib_recovery: "#7fb3a0", warmup: "#b9a77e", round1: "#d14b3b", reset: "#1f9d6b", round2: "#2563a6" };
+const PHASE_COLORS = { study_relax: "#5fa8c8", study_math_easy: "#c7b26a", study_math_hard: "#d9733c", study_stroop_hard: "#c2456b", calib_rest: "#8a96a3", calib_stress: "#e08a3c", calib_recovery: "#7fb3a0", warmup: "#b9a77e", round1: "#d14b3b", reset: "#1f9d6b", round2: "#2563a6" };
 const PHASE_NAMES = {
   idle: "", calib_rest: "Calibration: baseline", calib_survey: "Calibration: questionnaire", calib_stress: "Calibration: stress test",
   calib_recovery: "Calibration: recovery", calibration_check: "Calibration",
+  study_relax: "Study: relaxation", study_math_easy: "Study: easy math", study_math_hard: "Study: hard math",
+  study_stroop_hard: "Study: hard colour words", study_rating: "Study: rating", study_done: "Study: done",
   ready: "Get ready", warmup: "Warm-up", round1: "Round 1", reset: "Reset", round2: "Round 2", results: "Results",
 };
 // Score scale: 0 = your calm (rest calibration), 100 = your stress (stress-test calibration)
@@ -521,7 +523,7 @@ function calibShow(part, p) {
   const idx = steps.findIndex(([k]) => k === part);
   $("calib-steps").innerHTML = steps.map(([k, label], i) =>
     `<span class="step${i === idx ? " active" : i < idx ? " done" : ""}">${i + 1} · ${label}</span>`).join("");
-  ["rest", "survey", "stress", "recovery", "report"].forEach((k) => { $(`calib-${k}`).hidden = k !== part; });
+  ["rest", "survey", "stress", "recovery", "report", "relax", "rating", "study"].forEach((k) => { $(`calib-${k}`).hidden = k !== part; });
 }
 
 // Baseline: low-demand "vanilla" task (Jennings et al., 1992). Press Space when the circle turns blue.
@@ -685,11 +687,12 @@ function makeStroopItem() {
 
 // Shared engine for the two fast tasks: adaptive answer time limit (tighter after successes, looser after
 // failures) and the MIST-style comparison with an "average participant". No restart: just the next item.
-async function fastTask(kind, seconds) {
+// easy: fixed easiest level, 10 s per answer, no buzzer, flash or comparison bar (study protocol's easy block)
+async function fastTask(kind, seconds, { easy = false } = {}) {
   const stroop = kind === "stroop";
   const fb = $("sub-feedback"), prompt = $("sub-prompt");
   const [minLim, maxLim] = stroop ? [0.9, 3] : [2, 10];
-  let limit = stroop ? 2.2 : 6, level = 1, streak = 0, best = 0, cur = null, shownAt = 0;
+  let limit = easy ? 10 : stroop ? 2.2 : 6, level = 1, streak = 0, best = 0, cur = null, shownAt = 0;
   const recent = [];
   const stats = { attempts: 0, correct: 0, timeouts: 0, max_level: 1 };
   const updateCompare = () => {
@@ -712,7 +715,13 @@ async function fastTask(kind, seconds) {
     send({ type: "event", name: "calib_answer", data: { task: kind, item: stroop ? cur.answer : cur.text, given,
       correct: ok, timeout, level, rt: +((performance.now() - shownAt) / 1000).toFixed(3), limit: +limit.toFixed(2),
       stress: state.latest ? state.latest.stress : null } });
-    if (ok) {
+    if (ok && easy) {
+      streak++; best = Math.max(best, streak);
+      fb.className = "feedback ok"; fb.textContent = "✓";
+    } else if (easy) {
+      streak = 0;
+      fb.className = "feedback"; fb.textContent = timeout ? "Next one" : "Not quite";
+    } else if (ok) {
       streak++; best = Math.max(best, streak);
       limit = Math.max(minLim, limit * 0.92);
       if (!stroop && streak % 3 === 0) { level = Math.min(5, level + 1); stats.max_level = Math.max(stats.max_level, level); }
@@ -746,8 +755,8 @@ async function fastTask(kind, seconds) {
   await countdown(seconds, (rem) => {
     const whole = Math.ceil(rem);
     $("sub-timer").textContent = whole;
-    $("sub-timer").classList.toggle("urgent", rem <= 10);
-    if (rem > 0 && whole !== lastWhole) { lastWhole = whole; rem <= 10 ? sfx.tickUrgent() : sfx.tick(); }
+    $("sub-timer").classList.toggle("urgent", !easy && rem <= 10);
+    if (!easy && rem > 0 && whole !== lastWhole) { lastWhole = whole; rem <= 10 ? sfx.tickUrgent() : sfx.tick(); }
     const el = (performance.now() - shownAt) / 1000;
     $("sub-limit-bar").style.width = `${Math.max(0, 100 * (1 - el / limit))}%`;
     if (el >= limit && rem > 0) answer(null, true);
@@ -765,12 +774,16 @@ const STRESSOR_LEADS = {
   serial: "Count backwards from <b>1022</b> in steps of <b>13</b>, as fast as you can. Type each number and press Enter. " +
     "A mistake or running out of time sends you back to 1022.",
 };
-async function runStressor(kind, seconds) {
-  $("stress-lead").innerHTML = STRESSOR_LEADS[kind];
+async function runStressor(kind, seconds, { easy = false, title = "Stress test", lead = null } = {}) {
+  $("calib-stress").querySelector("h1").textContent = title;
+  $("stress-lead").innerHTML = lead || STRESSOR_LEADS[kind];
   $("sub-answer").hidden = kind !== "serial";
   $("stroop-keys").hidden = kind !== "stroop";
-  const result = kind === "serial" ? await serialSubtraction(seconds) : await fastTask(kind, seconds);
-  return { task: kind, ...result };
+  $("calib-stress").querySelector(".compare").hidden = easy;
+  const result = kind === "serial" ? await serialSubtraction(seconds) : await fastTask(kind, seconds, { easy });
+  $("calib-stress").querySelector("h1").textContent = "Stress test";
+  $("calib-stress").querySelector(".compare").hidden = false;
+  return { task: kind, easy, ...result };
 }
 
 async function recoveryRest(seconds) {
@@ -830,7 +843,19 @@ function renderCalibrationReport(cal, extra) {
     <p class="verdict ${noHeadset.length ? "used" : "unused"}">${noHeadset.length
       ? "✓ " + noHeadset.map((k) => SIGNAL_NAMES[k] || FACE_LABELS[k]).join(", ")
       : "✗ Only the EEG reacted: the headset-free score is not available yet"}</p></div>`;
-  $("report-signals").innerHTML =
+  // Flip check: anchors from the first half of rest and stress, tested on the second half (engine.split_half_check)
+  const chk = cal && cal.check;
+  let checkCard = "";
+  if (chk) {
+    const ok = chk.passed === true, na = chk.passed == null;
+    checkCard = `<div class="sig-card check-card ${ok ? "pass" : na ? "" : "fail"}"><h3>Calibration check</h3>
+      <div class="muted small">first half sets your calm and stress, second half tests them</div>
+      <div class="vals">${na ? "—" : ok ? "✓ Passed" : "✗ Failed"}</div>
+      <div class="muted small">${chk.auc != null ? `sorted ${Math.round(chk.auc * 100)}% of pairs right · gap ${chk.gap.toFixed(2)}` : ""}</div>
+      <p class="verdict ${ok ? "used" : "unused"}">${ok ? "The score points the right way for you: good to go."
+        : na ? "Calibration too short to check." : `Redo recommended: ${chk.note}.`}</p></div>`;
+  }
+  $("report-signals").innerHTML = checkCard +
     card("eeg", "Brain · alpha/beta ratio", (v) => Math.pow(10, v).toFixed(2), "") +
     card("hr", "Heart rate", (v) => Math.round(v), " bpm") + faceCard + bodyCard + selfCard;
 
@@ -846,6 +871,11 @@ function renderCalibrationReport(cal, extra) {
     lead = `Your ${names} reacted to stress: the score is personalised to you.`;
     summary = "From now on, 0 means as calm as at baseline and 100 means as stressed as during the test. Signals without at least a medium response are left out.";
   }
+  if (chk && chk.passed === false && cal && cal.ok) {
+    summary += " The calibration check failed: redo the calibration before trusting the score (sensor contact is the usual cause).";
+  }
+  $("calib-retry").classList.toggle("primary", !!(chk && chk.passed === false));
+  $("calib-continue").classList.toggle("primary", !(chk && chk.passed === false));
   if (s1 && s2 && s2.score - s1.score < 5 && cal && cal.ok) {
     summary += " Note: you did not report feeling more anxious, so the stress anchor may be weak.";
   }
@@ -934,6 +964,92 @@ async function calibrateOnly() {
   const recording = $("ds-record").checked;
   if (recording) send({ type: "session_start", meta: datasetMeta("calibration") });
   await calibrate({ standalone: true });
+  setPhase("idle");
+  show("setup");
+  state.busy = false;
+}
+
+// ---------- Study protocol (EPIStress-style, for training data) ----------
+// Calibration, then four blocks with a 1-5 stress rating after each (EPIStress: Mental stress level 1-5).
+// Phases study_relax (calm), study_math_hard and study_stroop_hard (stressed) are labelled by ml/run.py;
+// study_math_easy is the in-between block. Orders A and B swap the block order between participants.
+const STUDY_BLOCKS = {
+  relax: { phase: "study_relax", title: "Relax" },
+  math_easy: { phase: "study_math_easy", title: "Easy math", task: "math", easy: true,
+    lead: "Easy sums with plenty of time: every answer is a single digit, just press the key. No rush." },
+  math_hard: { phase: "study_math_hard", title: "Hard math", task: "math" },
+  stroop_hard: { phase: "study_stroop_hard", title: "Hard colour words", task: "stroop" },
+};
+const STUDY_ORDERS = { A: ["relax", "math_easy", "math_hard", "stroop_hard"], B: ["relax", "stroop_hard", "math_hard", "math_easy"] };
+const RATINGS = ["Not at all", "A little", "Moderately", "Very", "Extremely"];
+
+function studyShow(part, blocks, idx) {
+  calibShow(part, protocol());
+  $("calib-steps").innerHTML = ["Calibration", ...blocks.map((b) => b.title), "Summary"].map((label, i) =>
+    `<span class="step${i === idx ? " active" : i < idx ? " done" : ""}">${i + 1} · ${label}</span>`).join("");
+}
+
+async function relaxBlock(seconds) {
+  const scene = new BoatScene($("relax-sea"));
+  scene.start();
+  scene.setStress(5);
+  await countdown(seconds, (rem, tot) => {
+    $("relax-bar").style.width = `${100 * (1 - rem / tot)}%`;
+    $("relax-timer").textContent = `${Math.ceil(rem)} s`;
+  });
+  scene.stop();
+}
+
+function askRating(title) {
+  $("rating-block").textContent = title;
+  $("rating-row").innerHTML = RATINGS.map((label, i) => `<button data-v="${i + 1}"><b>${i + 1}</b><span>${label}</span></button>`).join("");
+  return new Promise((resolve) => {
+    const done = (v) => { document.removeEventListener("keydown", onKey); resolve(v); };
+    const onKey = (e) => { if (/^[1-5]$/.test(e.key)) done(Number(e.key)); };
+    document.addEventListener("keydown", onKey);
+    $("rating-row").querySelectorAll("button").forEach((b) => { b.onclick = () => done(Number(b.dataset.v)); });
+  });
+}
+
+async function runStudy() {
+  if (state.busy || !recordingChecksPass()) return;
+  state.busy = true;
+  audio().resume();
+  const order = $("study-order").value, seconds = QUICK ? 20 : Number($("study-block").value);
+  const blocks = STUDY_ORDERS[order].map((k) => ({ key: k, ...STUDY_BLOCKS[k] }));
+  const recording = $("ds-record").checked;
+  if (recording) send({ type: "session_start", meta: { ...datasetMeta("study"), study_order: order, block_seconds: seconds } });
+
+  await calibrate();   // same session; the report shows the flip check, with Continue or Redo
+  const results = [];
+  for (const [i, b] of blocks.entries()) {
+    const scores = [];
+    const sampler = setInterval(() => { if (state.latest && state.latest.stress != null) scores.push(state.latest.stress); }, 500);
+    setPhase(b.phase);
+    if (b.key === "relax") {
+      studyShow("relax", blocks, i + 1);
+      await relaxBlock(seconds);
+    } else {
+      studyShow("stress", blocks, i + 1);
+      await runStressor(b.task, seconds, { easy: !!b.easy, title: b.title, lead: b.lead });
+    }
+    clearInterval(sampler);
+    sfx.done();
+    setPhase("study_rating");
+    studyShow("rating", blocks, i + 1);
+    const rating = await askRating(b.title);
+    send({ type: "event", name: "study_rating", data: { block: b.phase, rating } });
+    results.push({ block: b.phase, title: b.title, rating, score: mean(scores) });
+  }
+  setPhase("study_done");
+  if (recording) send({ type: "session_end", summary: { kind: "study", order, block_seconds: seconds, blocks: results } });
+
+  studyShow("study", blocks, blocks.length + 1);
+  $("study-lead").textContent = `Order ${order}, ${Math.round(seconds / 60 * 10) / 10} min per block.` +
+    (recording ? ($("ds-consent").checked ? " Recorded with consent: it will be exported." : " Recorded without consent: it will NOT be exported.") : " Not recorded.");
+  $("study-table").innerHTML = "<tr><th>Block</th><th>Your rating (1-5)</th><th>Average live score</th></tr>" +
+    results.map((r) => `<tr><td>${r.title}</td><td>${r.rating}</td><td>${r.score == null ? "—" : Math.round(r.score)}</td></tr>`).join("");
+  await waitClick($("study-done"));
   setPhase("idle");
   show("setup");
   state.busy = false;
@@ -1163,6 +1279,7 @@ $("hs-connect").onclick = () => send({ type: "headset_connect", name: $("hs-name
 $("hs-disconnect").onclick = () => send({ type: "headset_disconnect" });
 $("hs-name").onkeydown = (e) => { if (e.key === "Enter") $("hs-connect").click(); };
 $("btn-calibrate").onclick = () => calibrateOnly();
+$("btn-study").onclick = () => runStudy();
 $("btn-widget").onclick = () => openWidget();
 $("btn-widget-2").onclick = () => openWidget();
 $("btn-new").onclick = () => { state.session = null; setPhase("idle"); show("setup"); };

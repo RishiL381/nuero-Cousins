@@ -139,6 +139,23 @@
           <label class="check"><input type="checkbox" id="ds-consent"> The participant agrees that their anonymised
             recordings (EEG, heart rate, face numbers; no images) are shared to train a model</label>
         </div>
+        <div class="study-form">
+          <label>Study order
+            <select id="study-order">
+              <option value="A">A: relax, easy math, hard math, hard colour words</option>
+              <option value="B">B: relax, hard colour words, hard math, easy math</option>
+            </select>
+          </label>
+          <label>Block length
+            <select id="study-block">
+              <option value="180">3 min per block (recommended)</option>
+              <option value="120">2 min per block</option>
+            </select>
+          </label>
+          <button id="btn-study" class="primary">Run study protocol</button>
+        </div>
+        <p class="hint">Study protocol (EPIStress-style): calibration, then relaxation, easy math, hard math and hard
+          colour words, with a 1-5 stress rating after each block. Alternate orders A and B between participants.</p>
         <p class="hint" id="ds-status">Start the camera and connect the Muse, then calibrate: every recorded calibration
           becomes labelled data (baseline = 0, stress test = 1). Build the zip to send with
           <code>.venv\Scripts\python tools\export_dataset.py</code></p>
@@ -203,6 +220,32 @@
         <div class="fixation"></div>
         <div class="progress"><div class="bar" id="rec-bar"></div></div>
         <p class="timer" id="rec-timer"></p>
+      </div>
+
+      <!-- Study protocol: relaxation block (EPIStress used a relaxation video), eyes open -->
+      <div id="calib-relax" class="center calib-part" hidden>
+        <h1>Relax</h1>
+        <p class="lead">Watch the sea, breathe normally and keep your eyes open. Nothing to do.</p>
+        <canvas id="relax-sea" class="relax-sea" aria-label="Calm sea"></canvas>
+        <div class="progress"><div class="bar" id="relax-bar"></div></div>
+        <p class="timer" id="relax-timer"></p>
+        <div class="contact small" data-live="contact"></div>
+      </div>
+
+      <!-- Study protocol: stress rating after each block (1-5, as in EPIStress) -->
+      <div id="calib-rating" class="center calib-part" hidden>
+        <h1>How stressed did you feel during that block?</h1>
+        <p class="lead" id="rating-block"></p>
+        <div class="rating-row" id="rating-row"></div>
+        <p class="hint">Click a number or press 1-5.</p>
+      </div>
+
+      <div id="calib-study" class="calib-part" hidden>
+        <h1>Study complete</h1>
+        <p class="lead" id="study-lead"></p>
+        <table class="mini study-table" id="study-table"></table>
+        <p class="hint">Export the recording with tools/export_dataset.py, then run python ml/run.py dataset_export.</p>
+        <div class="row"><button id="study-done" class="primary">Done</button></div>
       </div>
 
       <div id="calib-report" class="calib-part" hidden>
