@@ -116,7 +116,25 @@ h2 { font-size: 0.8rem; margin: 0 0 14px; font-weight: 600; text-transform: uppe
 .calib-actions { display: grid; gap: 10px; }
 .big-btn { padding: 14px 18px; font-size: 1rem; font-weight: 600; }
 .calib-actions .hint { margin: 0; }
-.sea-preview.tall { height: 230px; }
+.sea-preview.tall { height: auto; aspect-ratio: 1 / 1; }
+.px-wrap[data-for="sea-preview"] { max-width: 400px; margin: 0 auto; height: auto !important; }  /* hug the square canvas */
+/* breathing break on the pixel sea (pixel-sea.js), same look as the desktop widget */
+.px-blabel:empty { display: none; }
+.px-blabel { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: baseline; gap: 8px;
+  padding: 5px 10px; border-radius: 8px; background: #0f2730; border: 1px solid #5d8a95; color: #fdf6e3;
+  font-family: "Pixelify Sans", ui-monospace, monospace; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 0 #0a1c24; }
+.px-blabel b { font-weight: 500; font-size: 15px; }
+.px-blabel span { font-size: 15px; color: #ffd86b; font-variant-numeric: tabular-nums; }
+.px-blabel small { font-size: 11px; color: #9fc2ca; }
+.px-prompt { position: absolute; left: 8px; right: 8px; bottom: 8px; padding: 10px; border-radius: 8px; background: #0f2730;
+  border: 2px solid #fdf6e3; color: #fdf6e3; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 3px 0 #0a1c24; }
+.px-prompt[hidden], .px-bstop[hidden] { display: none; }
+.px-prompt p { margin: 0; font-family: "Pixelify Sans", ui-monospace, monospace; font-size: 14px; line-height: 1.25; }
+.px-prompt .row { display: flex; gap: 6px; }
+.px-prompt button, .px-bstop { font-family: "Pixelify Sans", ui-monospace, monospace; font-size: 13px; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.px-prompt .yes { background: #fdf6e3; color: #12303b; border: 0; }
+.px-prompt .no { background: transparent; color: #fdf6e3; border: 1px solid #5d8a95; }
+.px-bstop { position: absolute; bottom: 6px; right: 6px; background: #0f2730; color: #fdf6e3; border: 1px solid #5d8a95; padding: 2px 8px; }
 .chart-legend { justify-content: center; margin-top: 6px; }
 .chart-legend i { display: inline-block; width: 16px; height: 0; border-top: 3px solid; vertical-align: 3px; margin-right: 6px; }
 .chart-legend .line-full { border-color: var(--accent); }

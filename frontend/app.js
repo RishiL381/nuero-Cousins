@@ -1098,11 +1098,22 @@ function datasetMeta(kind) {
     started_at: new Date().toISOString(),
   };
 }
+// The camera is required for every calibration, study and session: without face data the headset-free score
+// and the personal model have nothing to learn from. Starts it if it is off; false if it still is not running.
+async function cameraReady() {
+  if (window.ClutchFace && ClutchFace.isRunning()) return true;
+  await $("cam-toggle").onclick();
+  if (window.ClutchFace && ClutchFace.isRunning()) return true;
+  alert("The camera must be on to calibrate: face data is needed for the headset-free score.\n\n" +
+    "Click \"Start camera\" in step 1 and allow camera access in the browser, then try again.");
+  $("cam-toggle").scrollIntoView({ behavior: "smooth", block: "center" });
+  return false;
+}
+
 function recordingChecksPass() {
   if (!$("ds-record").checked) return true;
   const missing = [];
   if (!$("ds-participant").value.trim()) missing.push("no participant code");
-  if (!(window.ClutchFace && ClutchFace.isRunning())) missing.push("the camera is off: no face data");
   const src = state.latest && state.latest.source;
   if (!(src && src.connected)) missing.push("the headset is not streaming: no EEG or heart data");
   if (!$("ds-consent").checked) missing.push("consent is not ticked: this recording will not be exported");
@@ -1110,7 +1121,7 @@ function recordingChecksPass() {
 }
 
 async function calibrateOnly() {
-  if (state.busy || !recordingChecksPass()) return;
+  if (state.busy || !(await cameraReady()) || !recordingChecksPass()) return;
   state.busy = true;
   audio().resume();
   const recording = $("ds-record").checked;
@@ -1142,7 +1153,7 @@ function studyShow(part, blocks, idx) {
 }
 
 async function relaxBlock(seconds) {
-  const scene = new BoatScene($("relax-sea"));
+  const scene = new BoatScene($("relax-sea"), { hud: false });
   scene.start();
   scene.setStress(5);
   await countdown(seconds, (rem, tot) => {
@@ -1164,7 +1175,7 @@ function askRating(title) {
 }
 
 async function runStudy() {
-  if (state.busy || !recordingChecksPass()) return;
+  if (state.busy || !(await cameraReady()) || !recordingChecksPass()) return;
   state.busy = true;
   audio().resume();
   const order = $("study-order").value, seconds = QUICK ? 20 : Number($("study-block").value);
@@ -1343,7 +1354,7 @@ function showResults() {
 
 // ---------- Session ----------
 async function runSession() {
-  if (state.busy || !recordingChecksPass()) return;
+  if (state.busy || !(await cameraReady()) || !recordingChecksPass()) return;
   state.busy = true;
   audio().resume();
   const participant = $("participant").value.trim() || $("ds-participant").value.trim() || "anon";
@@ -1392,7 +1403,7 @@ async function openWidget() {
 // ---------- Wiring ----------
 buildGauges();
 buildHead();
-state.scenes.preview = new BoatScene($("sea-preview"));
+state.scenes.preview = new BoatScene($("sea-preview"), { breathing: true, canPrompt: () => !state.busy });
 state.scenes.preview.start();
 
 $("btn-start").onclick = () => runSession();
@@ -1413,6 +1424,7 @@ renderFaceBars(null);
 $("cam-toggle").onclick = async () => {
   if (!window.ClutchFace) { $("cam-status").textContent = "Face module still loading, try again in a second…"; return; }
   if (ClutchFace.isRunning()) {
+    if (state.busy) { $("cam-status").textContent = "Keep the camera on until the calibration or session ends"; return; }
     ClutchFace.stop();
     $("cam-toggle").textContent = "Start camera"; $("cam-off").hidden = false;
     $("cam-status").textContent = "Camera off"; renderFaceBars(null);
