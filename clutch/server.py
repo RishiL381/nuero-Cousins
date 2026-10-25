@@ -133,7 +133,8 @@ def create_app(engine: Engine) -> FastAPI:
         report, history = model_report()
         return {"sessions": recorded_sessions(engine.logger.root), "dataset": dataset_info(), "job": jobs.snapshot(),
                 "recording": engine.logger.active, "report": report, "history": history,
-                "live_model": engine.learned.info if engine.learned else None}
+                "live_model": engine.learned.info if engine.learned else None,
+                "live_model_headset": engine.learned_headset.info if engine.learned_headset else None}
 
     @app.post("/api/dataset/build")
     async def build_dataset():
@@ -148,8 +149,9 @@ def create_app(engine: Engine) -> FastAPI:
         if dataset_info() is None:
             return JSONResponse({"error": "Build the dataset first."}, status_code=409)
 
-        def reload_model():  # the app switches to the new model as soon as training succeeds
+        def reload_model():  # the app switches to the new models as soon as training succeeds
             engine.learned = LiveScorer.load(MODELS / "headset_free.joblib")
+            engine.learned_headset = LiveScorer.load(MODELS / "with_headset.joblib")
 
         args = ["tools/train_model.py", "--data", str(DATASET), "--save", str(MODELS), "--notch", str(engine.cfg.notch_hz)]
         if not jobs.start("train", args, on_done=reload_model):
@@ -182,8 +184,9 @@ def main(argv=None):
         source = MuseSource(args.board, args.name, args.mac_address, args.ppg_preset)
     else:
         source = MockSource()
-    learned = LiveScorer.load(ROOT / "models" / "headset_free.joblib")  # written by tools/train_model.py --save models
-    engine = Engine(source, Config(notch_hz=args.notch), ROOT / "sessions", learned)
+    learned = LiveScorer.load(MODELS / "headset_free.joblib")  # written by tools/train_model.py --save models
+    engine = Engine(source, Config(notch_hz=args.notch), ROOT / "sessions", learned,
+                    LiveScorer.load(MODELS / "with_headset.joblib"))
 
     import uvicorn
     print(f"Clutch running with {args.source} source -> http://{args.host}:{args.port}")

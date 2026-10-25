@@ -11,18 +11,20 @@ left out of training and evaluation.
 
 Two ways to learn:
   A. label    the target is what the person was doing: rest = 0, stressor = 1 (labelled phases only).
-  B. teacher  the target is the EEG's own stress index at every second: the drop in log alpha power from
-              baseline, averaged over the channels whose alpha dropped during that session's stressor
-              (Cohen's d >= 0.5). A heart + face model learns to imitate it, from every phase, labelled or not.
+  B. teacher  the brain teaches the body: an EEG model (A on EEG features) gives its stress estimate for
+              every second, labelled or not, and a heart + face model learns to imitate it. The EEG estimate
+              is cross-fitted (each second is scored by an EEG model that did not train on it) so the student
+              learns what the brain generalises, not what it memorised.
 Both are judged the same way: does the heart + face score separate the labelled rest and stress seconds of
-a session the model never saw (AUC)?
+a session the model never saw (AUC)? The EEG and full (EEG + heart + face) models are evaluated alike: the
+better one is the "with headset" model the app uses while the Muse is on.
 
 Validation, chosen automatically:
   - 2+ participants: leave-one-participant-out;
   - 1 participant, 2+ sessions: leave-one-session-out (a personal model tested on a new session);
   - 1 session: each phase cut into 5 contiguous blocks, 15 s removed around the test block (weak check).
---save writes models/label.joblib, models/teacher.joblib and models/headset_free.joblib (the better of the
-two, which the app loads at start-up).
+--save writes models/label.joblib, models/teacher.joblib, models/headset_free.joblib (the better of the two)
+and models/with_headset.joblib (the better of EEG and full); the app loads both at start-up.
 """
 
 import argparse
@@ -31,7 +33,6 @@ import json
 import shutil
 import sys
 import time
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -53,7 +54,6 @@ N_BLOCKS, GAP_S = 5, 15.0
 # Screens where the person reads or fills in a form (report, questionnaires, ratings): alpha drops with any
 # visual attention, so these would teach "reading" rather than stress.
 SKIP_PHASES = {"idle", "ready", "results", "calibration_check", "calib_survey", "study_rating", "study_done"}
-TEACHER_MIN_D = 0.5
 PARAMS = dict(max_iter=150, learning_rate=0.05, max_depth=3, min_samples_leaf=20, l2_regularization=1.0, random_state=0)
 
 
@@ -104,7 +104,7 @@ def session_rows(sdir: Path, notch_hz: float):
 
 def normalise(df: pd.DataFrame) -> pd.DataFrame:
     """Baseline-correct each session with the first BASELINE_S of its first rest block, smooth causally within
-    each phase, and add the EEG teacher target."""
+    each phase."""
     out = []
     for sess, s in df.groupby("session"):
         s = s.sort_values("t").copy()
@@ -118,29 +118,23 @@ def normalise(df: pd.DataFrame) -> pd.DataFrame:
         t, blocks = s["t"].to_numpy(), s["block"].to_numpy()
         s[ALL_FEATURES] = np.vstack([window_mean(list(X[(blocks == blocks[i]) & (t > t[i] - SMOOTH_S) & (t <= t[i])]))
                                      for i in range(len(s))])
-        s = s[~is_base]
-        s["teacher"], chosen = teacher_index(s)
-        print(f"  {sess}: teacher channels {', '.join(chosen) or 'none (no alpha drop under stress)'}")
-        out.append(s)
+        out.append(s[~is_base])
     return pd.concat(out, ignore_index=True)
 
 
-def teacher_index(s: pd.DataFrame):
-    """EEG stress index: alpha drop from baseline, averaged over the channels whose alpha dropped under stress
-    in this session (same rule as the app's calibration: Cohen's d >= 0.5)."""
-    chosen = []
-    for ch in EEG_CHANNELS:
-        r = s.loc[s["label"] == 0, f"alphalog_{ch}"].dropna()
-        x = s.loc[s["label"] == 1, f"alphalog_{ch}"].dropna()
-        if len(r) >= 10 and len(x) >= 10:
-            pooled = max(np.sqrt((r.var() + x.var()) / 2), 0.05)
-            if (r.mean() - x.mean()) / pooled >= TEACHER_MIN_D:
-                chosen.append(ch)
-    if not chosen:
-        return np.nan, chosen
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        return -np.nanmean(s[[f"alphalog_{ch}" for ch in chosen]].to_numpy(dtype=float), axis=1), chosen
+def eeg_teacher(sub: pd.DataFrame) -> np.ndarray:
+    """The brain's own stress estimate (0-1) for every row of sub, labelled or not: an EEG model trained on
+    the labelled rows, cross-fitted with folds() so that no row is scored by a model that trained on it."""
+    sub = sub.reset_index(drop=True)
+    X, lab = sub[FEATURE_SETS["eeg"]].to_numpy(dtype=float), sub["label"].to_numpy()
+    out = np.full(len(sub), np.nan)
+    for _, tr, te in folds(sub):
+        ok = tr & ~np.isnan(lab)
+        cols = ~np.all(np.isnan(X[ok]), axis=0)
+        if len(set(lab[ok])) == 2 and cols.any():
+            m = HistGradientBoostingClassifier(**PARAMS).fit(X[ok][:, cols], lab[ok])
+            out[te] = m.predict_proba(X[te][:, cols])[:, 1]
+    return out
 
 
 def folds(df: pd.DataFrame):
@@ -190,16 +184,25 @@ def evaluate(df, kind, features, importance=False, train_frac=1.0):
     """Out-of-fold scores. train_frac < 1 keeps only the start of every training phase (learning curve)."""
     X = df[features].to_numpy(dtype=float)
     early = (df["block_pos"] <= train_frac).to_numpy()
-    lab, y = df["label"].to_numpy(), df["teacher"].to_numpy(dtype=float)
-    pred = np.full(len(df), np.nan)
+    lab = df["label"].to_numpy()
+    pred, brain = np.full(len(df), np.nan), np.full(len(df), np.nan)  # brain: EEG estimate on the test rows
     fold_auc, imp, n_imp = [], np.zeros(len(features)), 0
     for _, train, test in folds(df):
         train = train & early
         cols = ~np.all(np.isnan(X[train]), axis=0)  # a feature never recorded in training cannot be used
         tl = lab[train]
-        if not cols.any() or len(set(tl[~np.isnan(tl)])) < 2 or (kind == "teacher" and np.isnan(y[train]).all()):
+        if not cols.any() or len(set(tl[~np.isnan(tl)])) < 2:
             continue
-        model, scale = fit(kind, X[train][:, cols], y[train], tl)
+        y = None
+        if kind == "teacher":  # the brain teaches: EEG estimate on the training rows, then on the test rows
+            y = eeg_teacher(df[train])
+            if np.isnan(y).all():
+                continue
+            E, ok = df[FEATURE_SETS["eeg"]].to_numpy(dtype=float), train & ~np.isnan(lab)
+            ecols = ~np.all(np.isnan(E[ok]), axis=0)
+            brain[test] = HistGradientBoostingClassifier(**PARAMS).fit(E[ok][:, ecols], lab[ok]).predict_proba(
+                E[test][:, ecols])[:, 1]
+        model, scale = fit(kind, X[train][:, cols], y, tl)
         pred[test] = score(kind, model, scale, X[test][:, cols])
         ev = test & ~np.isnan(lab)
         if len(set(lab[ev])) == 2:
@@ -215,9 +218,9 @@ def evaluate(df, kind, features, importance=False, train_frac=1.0):
         return {"auc": None, "note": "no usable data"}, pred
     res = {"auc": round(float(roc_auc_score(lab[ok], pred[ok])), 3), "auc_folds": [round(a, 2) for a in fold_auc],
            "balanced_acc": round(float(balanced_accuracy_score(lab[ok], pred[ok] >= 0.5)), 3)}
-    if kind == "teacher":  # how well heart + face imitate the EEG on unseen data
-        both = ~np.isnan(pred) & ~np.isnan(y)
-        res["imitation_r"] = round(float(np.corrcoef(pred[both], y[both])[0, 1]), 3) if both.sum() > 10 else None
+    if kind == "teacher":  # how well heart + face imitate the brain on unseen data
+        both = ~np.isnan(pred) & ~np.isnan(brain)
+        res["imitation_r"] = round(float(np.corrcoef(pred[both], brain[both])[0, 1]), 3) if both.sum() > 10 else None
     if n_imp:
         res["importance"] = {k: round(float(v / n_imp), 3) for k, v in sorted(zip(features, imp), key=lambda kv: -kv[1])}
     return res, pred
@@ -245,18 +248,11 @@ def main():
                                 or "none above 5%"))
 
     report = {"validation": validation, "sessions": sorted(df["session"].unique()), "results": {}}
-    teacher_ok = ~df["teacher"].isna() & ~lab.isna()
-    if teacher_ok.any() and lab[teacher_ok].nunique() == 2:
-        t_auc = roc_auc_score(lab[teacher_ok], df.loc[teacher_ok, "teacher"])
-        report["teacher_auc"] = round(float(t_auc), 3)
-        print(f"\nThe EEG teacher itself separates rest and stress with AUC {t_auc:.2f} "
-              "(channels chosen on the same data, so optimistic)")
-
     runs = [("A label", "label", name) for name in FEATURE_SETS] + [("B teacher", "teacher", "headset_free")]
     preds = {}
     print(f"\n{'model':10s} {'signals':13s} {'AUC':>5s} {'bal.acc':>8s} {'imitation r':>12s}   AUC per fold")
     for title, kind, name in runs:
-        res, pred = evaluate(df, kind, FEATURE_SETS[name], importance=name == "headset_free")
+        res, pred = evaluate(df, kind, FEATURE_SETS[name], importance=name in ("headset_free", "eeg"))
         report["results"][f"{kind}:{name}"] = res
         preds[f"{kind}:{name}"] = pred
         if res["auc"] is None:
@@ -266,7 +262,10 @@ def main():
         print(f"{title:10s} {name:13s} {res['auc']:5.2f} {res['balanced_acc']:8.2f} "
               f"{'' if imit is None else f'{imit:.2f}':>12s}   {res['auc_folds']}")
 
-    for key in ("label:headset_free", "teacher:headset_free"):
+    report["teacher_auc"] = report["results"]["label:eeg"].get("auc")  # the teacher: the brain on its own
+    with_headset = max(("eeg", "full"), key=lambda k: report["results"][f"label:{k}"].get("auc") or 0)
+    report["with_headset"] = with_headset
+    for key in ("label:headset_free", "teacher:headset_free", "label:eeg"):
         imp = report["results"][key].get("importance", {})
         if imp:
             print(f"\nMost useful features, {key} (drop in AUC when shuffled):")
@@ -274,10 +273,11 @@ def main():
                 print(f"  {k:16s} {v:+.3f}")
 
     # Score per phase on unseen data: relax should be low, hard tasks high, easy math in between
-    print("\nMean heart + face score per phase, on unseen data (0 = calm, 1 = stress):")
-    table = df[["phase"]].assign(A=preds["label:headset_free"], B=preds["teacher:headset_free"])
+    print("\nMean score per phase, on unseen data (0 = calm, 1 = stress). A, B: heart + face; H: with headset")
+    table = df[["phase"]].assign(A=preds["label:headset_free"], B=preds["teacher:headset_free"],
+                                 H=preds[f"label:{with_headset}"])
     print(table.groupby("phase", sort=False).mean().round(2).to_string())
-    print("\nAUC: 0.5 = chance, 1.0 = perfect. imitation r: correlation with the EEG index on unseen data.")
+    print("\nAUC: 0.5 = chance, 1.0 = perfect. imitation r: correlation with the EEG model on unseen data.")
     report["phase_means"] = {ph: {k: (None if pd.isna(v) else round(float(v), 3)) for k, v in row.items()}
                              for ph, row in table.groupby("phase", sort=False).mean().iterrows()}
 
@@ -293,12 +293,14 @@ def main():
 
     # Held-out score over time, per session (every 2 s), for the charts in the app
     report["timeline"] = {}
-    for sess, g in df.assign(A=preds["label:headset_free"], B=preds["teacher:headset_free"]).groupby("session"):
+    for sess, g in df.assign(A=preds["label:headset_free"], B=preds["teacher:headset_free"],
+                             H=preds[f"label:{with_headset}"]).groupby("session"):
         g = g.sort_values("t").iloc[::2]
         t0 = float(g["t"].iloc[0])
         report["timeline"][sess] = [[round(r.t - t0, 1), r.phase, None if pd.isna(r.label) else int(r.label),
                                      None if pd.isna(r.A) else round(float(r.A), 3),
-                                     None if pd.isna(r.B) else round(float(np.clip(r.B, -0.5, 1.5)), 3)]
+                                     None if pd.isna(r.B) else round(float(np.clip(r.B, -0.5, 1.5)), 3),
+                                     None if pd.isna(r.H) else round(float(r.H), 3)]
                                     for r in g.itertuples()]
     report["seconds"] = {"rest": int((lab == 0).sum()), "stress": int((lab == 1).sum()), "unlabelled": int(lab.isna().sum())}
 
@@ -307,12 +309,12 @@ def main():
         out = Path(args.save)
         out.mkdir(parents=True, exist_ok=True)
         aucs = {}
+        brain = eeg_teacher(df)
         for kind in ("label", "teacher"):
             feats = [k for k in FEATURE_SETS["headset_free"] if df[k].notna().any()]
-            if kind == "teacher" and df["teacher"].isna().all():
+            if kind == "teacher" and np.isnan(brain).all():
                 continue
-            model, scale = fit(kind, df[feats].to_numpy(dtype=float), df["teacher"].to_numpy(dtype=float),
-                               lab.to_numpy())
+            model, scale = fit(kind, df[feats].to_numpy(dtype=float), brain, lab.to_numpy())
             aucs[kind] = report["results"][f"{kind}:headset_free"].get("auc") or 0
             joblib.dump({"name": f"headset_free ({kind})", "kind": kind, "model": model, "scale": scale,
                          "features": feats, "baseline_s": BASELINE_S, "smooth_s": SMOOTH_S,
@@ -321,16 +323,23 @@ def main():
         best = max(aucs, key=aucs.get)
         shutil.copy2(out / f"{best}.joblib", out / "headset_free.joblib")
         report["live_model"] = best
+        feats = [k for k in FEATURE_SETS[with_headset] if df[k].notna().any()]
+        model, _ = fit("label", df[feats].to_numpy(dtype=float), None, lab.to_numpy())
+        joblib.dump({"name": f"with headset ({with_headset})", "kind": "label", "model": model, "scale": None,
+                     "features": feats, "baseline_s": BASELINE_S, "smooth_s": SMOOTH_S,
+                     "trained_on": report["sessions"], "cv_auc": report["results"][f"label:{with_headset}"]["auc"],
+                     "validation": validation}, out / "with_headset.joblib")
         report["trained_at"] = time.strftime("%Y-%m-%d %H:%M")
         (out / "report.json").write_text(json.dumps(report))
         hist_path = out / "history.json"  # one entry per training, to show progress as the dataset grows
         history = json.loads(hist_path.read_text()) if hist_path.exists() else []
         history.append({"trained_at": report["trained_at"], "sessions": len(report["sessions"]),
                         "seconds": report["seconds"], "validation": validation, "live_model": best,
+                        "with_headset": with_headset,
                         "auc": {k: v.get("auc") for k, v in report["results"].items()}})
         hist_path.write_text(json.dumps(history, indent=2))
-        print(f"\nSaved {', '.join(f'{k}.joblib' for k in aucs)} in {out}; the app will use '{best}' "
-              f"(AUC {aucs[best]:.2f}) as headset_free.joblib")
+        print(f"\nSaved in {out}: without headset '{best}' (AUC {aucs[best]:.2f}), with headset "
+              f"'{with_headset}' (AUC {report['results'][f'label:{with_headset}']['auc']:.2f})")
 
 
 if __name__ == "__main__":

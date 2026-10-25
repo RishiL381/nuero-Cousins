@@ -119,22 +119,49 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
 - **Features** (`clutch/learned.py`, shared with the live app): log theta, alpha and beta power per EEG channel (clean windows only), heart rate, and the seven face indicators, every second.
 - **Personal reference:** each feature is taken relative to the median of the first 45 s of the session's first rest block. Those seconds are then excluded from training and testing. The features are averaged over the last 10 s.
 - **A. Label model:** predicts what the person was doing. Rest = 0 (`calib_rest`, `study_relax`), stressor = 1 (`calib_stress`, `study_math_hard`, `study_stroop_hard`). It uses labelled seconds only. Feature sets: full, headset-free (heart + face), and each modality alone.
-- **B. Teacher model:** heart + face learn to imitate an EEG stress index, at every second of the protocol, labelled or not.
-  - The index is the drop in log alpha power from baseline, averaged over the channels whose alpha dropped under that session's stressor (d ≥ 0.5, the app's rule).
-  - The prediction is scaled so that the median at rest = 0 and under stress = 1.
-  - Screens where the person reads or answers questions (report, questionnaires, ratings) are left out: alpha drops with any visual attention, not only with stress. Including them made the index swing far outside its rest–stress range.
-- **Common judge:** for both, the AUC of the heart + face score between the labelled rest and stress seconds of unseen data. The script also prints the mean score per phase. Easy math (`study_math_easy`, unlabelled) should fall between rest and hard tasks: it has the same posture and keyboard as hard math, so it tests whether a model learned stress or just "typing".
+- **B. Brain-taught model:** heart + face learn to imitate the brain.
+  - An EEG model (A, on EEG features only) gives its stress estimate for every second, labelled or not.
+  - The estimate is cross-fitted: each second is scored by an EEG model that did not train on it.
+  - A heart + face regressor learns to reproduce that estimate. Its output is scaled so that the median at rest = 0 and under stress = 1.
+  - A first version used a fixed rule (alpha drop on the channels that responded). It found no responding channel in session 2, so it was replaced.
+- **Screens left out:** screens where the person reads or answers questions (report, questionnaires, ratings) are not used. Alpha drops with any visual attention, not only with stress.
+- **Common judge:** every model is judged by its AUC between the labelled rest and stress seconds of unseen data. The script also prints the mean score per phase. Easy math (`study_math_easy`, unlabelled) should fall between rest and hard tasks: it has the same posture and keyboard as hard math, so it tests whether a model learned stress or just "typing".
 - **Validation**, chosen automatically:
   - with two or more participants: leave-one-participant-out;
   - with one participant and two or more sessions: leave-one-session-out, for a personal model;
   - with one session: 5 contiguous time blocks per phase, with 15 s removed around each test block. This is weak.
   - Random splits are not used: neighbouring seconds share overlapping windows and would inflate the score.
-- **Live use:** `--save models` saves both models. The one with the better AUC becomes `headset_free.joblib`, which the app loads at start-up. It scores from the 46th second of a calibration onwards, next to the rule-based scores.
+- **Live use:** `--save models` (or "Train model" in the app) saves:
+  - `with_headset.joblib`: the better of the EEG and full models, used while the Muse streams;
+  - `headset_free.joblib`: the better of the label and brain-taught heart + face models.
+  - Both start scoring 45 s into a calibration, next to the rule-based scores, with ~5 s output smoothing.
 
-**First result (P01 only, one session, time blocks, AUC of the score on held-out blocks):**
+**Results, P01, 2 sessions (25 October), leave-one-session-out, AUC on the unseen session:**
 
-| Model | Signals | AUC |
-|---|---|---|
+| Model | Signals | Session 1 | Session 2 | Pooled |
+|---|---|---|---|---|
+| A label | **EEG** | **0.92** | **0.91** | **0.87** |
+| A label | EEG + heart + face | 1.00 | 0.74 | 0.81 |
+| A label | heart + face | 1.00 | 0.67 | 0.72 |
+| A label | face | 1.00 | 0.65 | 0.72 |
+| A label | heart | 0.73 | 0.62 | 0.65 |
+| B brain-taught | heart + face | 0.83 | 0.52 | 0.57 (imitation r = 0.01) |
+
+- **The brain transfers best to a new session.** Heart + face scores 1.00 on session 1 when trained on session 2, but only 0.67 the other way. Their pattern is not stable between sessions.
+- **What the EEG model uses** (permutation importance): beta at TP10 and AF7, then alpha at AF8.
+  - AF8 alpha drops under stress in both sessions (d = −1.08 and −0.50) and does not drift with time. This is the brain marker expected from the literature (Vanhollebeke et al., 2022).
+  - TP9/TP10 power rises in all bands during tasks, and AF7 beta rises strongly. This is most likely jaw, temple and forehead muscle tension (Goncharova et al., 2003). It is real stress physiology, but muscular, and only the headset picks it up.
+- **Score per phase on session 2** (with-headset model, unseen): rest 0.41, stress test 0.85, relaxation 0.15, easy math 0.82, hard math 0.90, hard colour words 0.68.
+  - Relaxation is correctly calm.
+  - Easy math scores almost as high as hard math, so part of what the model detects is "doing a task" rather than stress.
+- **Heart + face cannot yet imitate the brain** (r = 0.01 on the unseen session). Removing the headset is not supported by two sessions. More sessions are needed to tell whether this is a data problem or a real limit.
+- **Session 2 data issue:**
+  - another browser tab reset the phase to idle 22 s into the 3-minute baseline. The 566–723 s range was relabelled `calib_rest` (originals kept as `*.orig`).
+  - The bug is fixed: only the tab running a protocol restores its phase after a reconnect.
+  - The live calibration of that session used only those 22 s, which explains its wrong live score (93 during relaxation).
+- **Self-report, session 2:** STAI-6 rose from 37 to 63. Block ratings were relax 2, easy math 3, hard math 5, hard colour words 5, so the stress induction worked.
+
+---|---|---|
 | A label | full | 0.77 |
 | A label | heart + face | 0.81 |
 | A label | EEG | 0.75 |

@@ -1,0 +1,22 @@
+{
+  "kind": "study",
+  "consent": true,
+  "protocol": "standard",
+  "stressor": "math",
+  "protocol_seconds": {
+    "rest": 180,
+    "stress": 120,
+    "recovery": 120
+  },
+  "camera": true,
+  "headset_streaming": true,
+  "device": {
+    "name": "Muse-3724",
+    "address": "00:55:DA:B6:37:24"
+  },
+  "started_at": "2026-10-25T18:10:40.528Z",
+  "study_order": "A",
+  "block_seconds": 180,
+  "consent_note": "participant gave consent in writing after the session (2026-10-25); code set to match session 1",
+  "participant": "P01"
+}

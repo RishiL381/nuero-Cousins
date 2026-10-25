@@ -147,7 +147,8 @@
             <div class="gauge" data-size="lg"></div>
             <div class="chips" id="signal-chips"></div>
             <p class="body-score">Without headset (heart + face): <b data-live="stress-body">—</b></p>
-            <p class="body-score" id="ml-score" hidden>Trained model (heart + face): <b data-live="stress-ml">—</b></p>
+            <p class="body-score" id="ml-score-headset" hidden>Trained model with headset (brain): <b>—</b></p>
+            <p class="body-score" id="ml-score" hidden>Trained model without headset (heart + face): <b data-live="stress-ml">—</b></p>
             <p class="muted small" id="calib-note">Calibrate to see your stress score.</p>
             <canvas id="chart-setup" class="chart" aria-label="Both scores over the last two minutes"></canvas>
             <div class="legend chart-legend">
@@ -183,8 +184,9 @@
             <h2>Model</h2>
             <p class="tr-line" id="tr-model">No model trained yet.</p>
             <div class="row"><button id="btn-train" class="primary">Train model</button></div>
-            <p class="hint">Trains two heart + face models: one on what you were doing (rest or stress test), one that
-              imitates your EEG. Both are tested on data they never saw, and the better one runs live.</p>
+            <p class="hint">Trains a brain model for when you wear the Muse, and two heart + face models for when you
+              don't: one on what you were doing (rest or stress), one taught by the brain model. All are tested on data
+              they never saw; the best ones run live.</p>
             <pre class="job-log" id="tr-log-train" hidden></pre>
           </div>
         </div>

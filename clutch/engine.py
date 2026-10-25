@@ -299,7 +299,7 @@ class SessionLogger:
     CHANNELS = ("TP9", "AF7", "AF8", "TP10")
     CHANNEL_COLS = ([f"{b}_{ch}" for ch in CHANNELS for b in ("alpha", "beta", "theta", "gamma", "alphashare", "alphalog")]
                     + [f"q_{ch}" for ch in CHANNELS] + [f"muscle_{ch}" for ch in CHANNELS])
-    METRIC_COLS = (["t", "phase", "stress", "stress_body", "stress_ml", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
+    METRIC_COLS = (["t", "phase", "stress", "stress_body", "stress_ml", "stress_ml_headset", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
                     "hr_bpm", "hr_quality", "motion", "usable_channels", "contact"] + FACE_COLS + CHANNEL_COLS)
 
     def __init__(self, root: Path):
@@ -342,7 +342,7 @@ class SessionLogger:
             contact = "".join(c["q"][0] for c in eeg.get("channels", {}).values())  # e.g. "ggfb"
             face = m.get("face") or {}
             self._writers["metrics.csv"].writerow(
-                [m["t"], m["phase"], m["stress"], m.get("stress_body"), m.get("stress_ml"), m["z"].get("eeg"), m["z"].get("hr"),
+                [m["t"], m["phase"], m["stress"], m.get("stress_body"), m.get("stress_ml"), m.get("stress_ml_headset"), m["z"].get("eeg"), m["z"].get("hr"),
                  eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
                  hr.get("bpm"), hr.get("quality"), m["motion"].get("level"),
                  eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS]
@@ -395,9 +395,11 @@ class SessionLogger:
 
 
 class Engine:
-    def __init__(self, source, cfg: Config, sessions_dir: Path, learned: LiveScorer | None = None):
+    def __init__(self, source, cfg: Config, sessions_dir: Path, learned: LiveScorer | None = None,
+                 learned_headset: LiveScorer | None = None):
         self.source = source
-        self.learned = learned
+        self.learned = learned                    # trained heart + face model
+        self.learned_headset = learned_headset    # trained model that uses the EEG (needs the Muse)
         self.cfg = cfg
         self.model = StressModel(cfg)
         self.logger = SessionLogger(sessions_dir)
@@ -492,14 +494,16 @@ class Engine:
             full, body, z = self.model.score(values, cfg.tick_s)
             # Main score: with EEG when the headset streams, otherwise the headset-free score.
             stress = full if eeg is not None else body
-            # Trained model (tools/train_model.py), heart + face only, when one is installed
-            ml = (self.learned.update(cfg.tick_s, self.phase, row_features(feats, hr, motion, face, cfg.min_hr_quality))
-                  if self.learned else None)
+            # Trained models (tools/train_model.py), when installed: heart + face, and with the headset (brain)
+            row = row_features(feats, hr, motion, face, cfg.min_hr_quality)
+            ml = self.learned.update(cfg.tick_s, self.phase, row) if self.learned else None
+            ml_headset = self.learned_headset.update(cfg.tick_s, self.phase, row) if self.learned_headset else None
             self.seq += 1
             m = {
                 "type": "metrics", "seq": self.seq, "t": self.now(), "phase": self.phase,
-                "stress": stress, "stress_body": body, "stress_ml": ml,
+                "stress": stress, "stress_body": body, "stress_ml": ml, "stress_ml_headset": ml_headset,
                 "learned": self.learned.info if self.learned else None,
+                "learned_headset": self.learned_headset.info if self.learned_headset else None,
                 "calibrated": self.model.calibration is not None,
                 "z": z, "used": sorted(z), "eeg": feats, "hr": hr, "motion": motion, "face": face,
                 "source": src.status(),

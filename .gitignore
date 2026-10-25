@@ -5,7 +5,6 @@ analysis/results.csv
 dataset_export/
 clutch_dataset_*.zip
 dataset_export_mapping.json
-models/
 # ML pipeline: raw public datasets and generated files stay local (see ml/README.md)
 data/epistress/
 data/kaggle-*/

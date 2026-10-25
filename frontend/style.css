@@ -381,11 +381,11 @@ footer { text-align: center; font-size: 0.8rem; padding: 12px 16px 16px; }
 .check-card.fail { border-color: var(--bad); }
 
 /* ---------- Step 4: dataset and model ---------- */
-:root { --series-a: #2563a6; --series-b: #e08a3c; --series-other: #9aa5b1; }
+:root { --series-a: #2563a6; --series-b: #e08a3c; --series-c: #b8327f; --series-other: #9aa5b1; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --series-a: #4a8ad4; --series-b: #d07a2c; --series-other: #6b7886; }
+  :root:not([data-theme="light"]) { --series-a: #4a8ad4; --series-b: #d07a2c; --series-c: #d354a0; --series-other: #6b7886; }
 }
-:root[data-theme="dark"] { --series-a: #4a8ad4; --series-b: #d07a2c; --series-other: #6b7886; }
+:root[data-theme="dark"] { --series-a: #4a8ad4; --series-b: #d07a2c; --series-c: #d354a0; --series-other: #6b7886; }
 .tr-line { margin: 4px 0 12px; font-size: 0.92rem; }
 .tr-details { margin: 0 0 12px; font-size: 0.85rem; color: var(--muted); }
 .tr-details summary { cursor: pointer; }

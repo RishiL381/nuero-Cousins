@@ -9,11 +9,12 @@
   // Colour follows the model everywhere: label model = series A, EEG-teacher model = series B
   const SERIES = {
     label: { name: "Label model", key: "label:headset_free", color: "var(--series-a)", dash: "" },
-    teacher: { name: "EEG-teacher model", key: "teacher:headset_free", color: "var(--series-b)", dash: "6 4" },
+    teacher: { name: "Brain-taught model", key: "teacher:headset_free", color: "var(--series-b)", dash: "6 4" },
+    headset: { name: "With headset (brain)", key: "label:eeg", color: "var(--series-c)", dash: "2 3" },
   };
   const MODEL_ROWS = [
     ["label:headset_free", "Heart + face · label model", "var(--series-a)"],
-    ["teacher:headset_free", "Heart + face · EEG teacher", "var(--series-b)"],
+    ["teacher:headset_free", "Heart + face · taught by brain", "var(--series-b)"],
     ["label:heart", "Heart only", "var(--series-other)"],
     ["label:face", "Face only", "var(--series-other)"],
     ["label:eeg", "EEG only (headset)", "var(--series-other)"],
@@ -93,14 +94,16 @@
     const rep = data.report;
     el("tr-model").textContent = rep
       ? `Trained ${rep.trained_at || ""} on ${rep.sessions.length} session${rep.sessions.length > 1 ? "s" : ""}. ` +
-        `Running live: ${rep.live_model === "teacher" ? "EEG-teacher" : "label"} model ` +
-        `(AUC ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)} on unseen data).`
+        `Live with the headset: ${rep.with_headset === "full" ? "brain + heart + face" : "brain"} model ` +
+        `(AUC ${fmtAuc((rep.results[`label:${rep.with_headset || "eeg"}`] || {}).auc)}); without: ` +
+        `${rep.live_model === "teacher" ? "brain-taught" : "label"} model (AUC ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)}).`
       : "No model trained yet.";
 
     const done = !!rep;
     el("sn-4").classList.toggle("done", done);
     el("ss-4").className = "step-state" + (done ? " ok" : "");
-    el("ss-4").textContent = done ? `✓ Model trained · AUC ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)} on unseen data`
+    el("ss-4").textContent = done ? `✓ Models trained · AUC on unseen data: ${fmtAuc((rep.results[`label:${rep.with_headset || "eeg"}`] || {}).auc)} ` +
+        `with headset, ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)} without`
       : ds ? "Dataset ready: train the model"
       : ok.length ? `${ok.length} session${ok.length > 1 ? "s" : ""} ready: build the dataset`
       : "Record calibrations or study sessions first";
@@ -117,16 +120,19 @@
   }
 
   function renderResults(rep) {
-    const live = rep.live_model, other = live === "label" ? "teacher" : "label";
+    SERIES.headset.key = `label:${rep.with_headset || "eeg"}`;
+    const live = rep.live_model;
     const res = (k) => rep.results[SERIES[k].key] || {};
     const secs = rep.seconds || {};
     const kpi = (k, v, s, color) => `<div class="tr-kpi"><div class="k">${color ? `<i style="background:${color}"></i>` : ""}${k}</div>
       <div class="v">${v}</div><div class="s">${s}</div></div>`;
     el("tr-kpis").innerHTML =
-      kpi(`${SERIES[live].name} · live`, fmtAuc(res(live).auc), "heart + face, AUC on unseen data", SERIES[live].color) +
-      kpi(SERIES[other].name, fmtAuc(res(other).auc), "heart + face, AUC on unseen data", SERIES[other].color) +
-      kpi("Imitates the EEG", res("teacher").imitation_r == null ? "—" : `r ${res("teacher").imitation_r.toFixed(2)}`,
-        rep.teacher_auc != null ? `the EEG index itself: AUC ${rep.teacher_auc.toFixed(2)}` : "no EEG channel responded") +
+      kpi("With headset · live", fmtAuc(res("headset").auc),
+        `${rep.with_headset === "full" ? "brain + heart + face" : "brain (EEG) only"}, AUC on unseen data`, SERIES.headset.color) +
+      kpi("Without headset · live", fmtAuc(res(live).auc),
+        `heart + face, ${live === "teacher" ? "taught by the brain" : "label model"}, AUC on unseen data`, SERIES[live].color) +
+      kpi("Brain → body", res("teacher").imitation_r == null ? "—" : `r ${res("teacher").imitation_r.toFixed(2)}`,
+        "how well heart + face reproduce the brain model's estimate (1 = perfectly)") +
       kpi("Training data", fmtTime((secs.rest || 0) + (secs.stress || 0)),
         `${rep.sessions.length} session${rep.sessions.length > 1 ? "s" : ""} · tested by ${rep.validation.replace(/ \(.*\)/, "")}`);
 
@@ -186,13 +192,15 @@
     let g = [0, 0.25, 0.5, 0.75, 1].map((v) => `<line class="${v === 0.5 ? "chance" : "grid-line"}" x1="${x(v)}" x2="${x(v)}" y1="${top}"
       y2="${H - 20}"/>${v * 4 % 2 ? "" : `<text x="${x(v)}" y="${H - 6}" text-anchor="middle">${v === 0.5 ? "0.5 chance" : v}</text>`}`).join("");
     MODEL_ROWS.forEach(([key, name, color], i) => {
-      const r = rep.results[key] || {}, y = top + i * rowH, live = key === SERIES[rep.live_model].key;
+      const r = rep.results[key] || {}, y = top + i * rowH;
+      const live = key === SERIES[rep.live_model].key || key === SERIES.headset.key;
+      if (key === SERIES.headset.key) color = SERIES.headset.color;
       g += `<text x="${labelW}" y="${y + 19}" text-anchor="end"${live ? ' class="val"' : ""}>${esc(name)}${live ? " · live" : ""}</text>`;
       if (r.auc == null) { g += `<text x="${x0 + 4}" y="${y + 19}">no data</text>`; return; }
       const tip = `${name}\nAUC ${r.auc.toFixed(2)} on unseen data` +
         (r.auc_folds && r.auc_folds.length ? `\nper test fold: ${r.auc_folds.join(", ")}` : "") +
         (r.balanced_acc != null ? `\nbalanced accuracy ${r.balanced_acc.toFixed(2)}` : "") +
-        (r.imitation_r != null ? `\nimitates the EEG: r ${r.imitation_r.toFixed(2)}` : "");
+        (r.imitation_r != null ? `\nreproduces the brain model: r ${r.imitation_r.toFixed(2)}` : "");
       g += `<path d="${barEnd(x0, y + 8, Math.max(1, x(r.auc) - x0), 14)}" fill="${color}"/>
         <rect x="0" y="${y + 2}" width="${W}" height="${rowH - 4}" fill="transparent" data-tip="${esc(tip)}"/>
         <text class="val" x="${x(r.auc) + 6}" y="${y + 19}">${r.auc.toFixed(2)}</text>`;
@@ -217,7 +225,7 @@
       g += pts.filter((p) => p.y != null).map((p) => marker(x(p.x), y(p.y), s,
         `${s.name}\ntrained on the first ${Math.round(p.x * 100)}% of each phase\nAUC ${p.y.toFixed(2)} on unseen data`)).join("");
       const last = pts[pts.length - 1];
-      if (last.y != null) ends.push({ y: y(last.y), text: `${k === "label" ? "Label" : "Teacher"} ${last.y.toFixed(2)}` });
+      if (last.y != null) ends.push({ y: y(last.y), text: `${k === "label" ? "Label" : "Brain-taught"} ${last.y.toFixed(2)}` });
     }
     g += endLabels(ends, r + 10);
     el("ch-learning").innerHTML = svg(W, H, g) + legend(["label", "teacher"]) +
@@ -251,7 +259,7 @@
     const minutes = Math.ceil(tMax);
     for (let m = 0; m <= minutes; m += Math.max(1, Math.round(minutes / 6)))
       g += `<text x="${x(Math.min(m, tMax))}" y="${H - 6}" text-anchor="middle">${m} min</text>`;
-    for (const [k, col] of [["label", 3], ["teacher", 4]]) {
+    for (const [k, col] of [["headset", 5], ["label", 3], ["teacher", 4]]) {
       const pts = [];  // a gap in time (skipped questionnaire) breaks the line
       let run = [];  // 10 s moving average (5 points at 2 s), restarted after each gap
       rows.forEach((row, i) => {
@@ -263,16 +271,17 @@
     }
     g += `<line id="tl-cross" x1="0" x2="0" y1="${t}" y2="${b}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>
       <rect id="tl-hit" x="${l}" y="${t}" width="${r - l}" height="${b - t}" fill="transparent"/>`;
-    box.innerHTML = svg(W, H, g) + legend(["label", "teacher"]);
+    box.innerHTML = svg(W, H, g) + legend(["headset", "label", "teacher"]);
     const hit = box.querySelector("#tl-hit"), cross = box.querySelector("#tl-cross");
     hit.addEventListener("mousemove", (e) => {
       const rect = hit.getBoundingClientRect(), m = (e.clientX - rect.left) / rect.width * tMax;
       let best = 0;
       for (let i = 1; i < rows.length; i++) if (Math.abs(rows[i][0] / 60 - m) < Math.abs(rows[best][0] / 60 - m)) best = i;
-      const [tt, phase, label, A, B] = rows[best], name = phaseNames[phase] || phase;
+      const [tt, phase, label, A, B, H] = rows[best], name = phaseNames[phase] || phase;
       cross.setAttribute("x1", x(tt / 60)); cross.setAttribute("x2", x(tt / 60)); cross.setAttribute("visibility", "visible");
       showTip(e, `${(tt / 60).toFixed(1)} min · ${name}${label == null ? "" : label ? " (stress)" : " (calm)"}\n` +
-        `Label model ${A == null ? "—" : A.toFixed(2)}\nEEG-teacher model ${B == null ? "—" : B.toFixed(2)}`);
+        `With headset ${H == null ? "—" : H.toFixed(2)}\nLabel model ${A == null ? "—" : A.toFixed(2)}\n` +
+        `Brain-taught model ${B == null ? "—" : B.toFixed(2)}`);
     });
     hit.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
   }
@@ -281,8 +290,8 @@
     const hist = data.history || [], box = el("ch-history");
     if (!hist.length) { box.innerHTML = ""; return; }
     const W = width("ch-history"), H = 190, l = 64, r = W - 110, t = 10, b = H - 26;
-    const get = (h, k) => (h.auc || {})[SERIES[k].key];
-    const vals = hist.flatMap((h) => [get(h, "label"), get(h, "teacher")]).filter((v) => v != null);
+    const get = (h, k) => (h.auc || {})[k === "headset" ? `label:${h.with_headset || "eeg"}` : SERIES[k].key];
+    const vals = hist.flatMap((h) => [get(h, "headset"), get(h, "label"), get(h, "teacher")]).filter((v) => v != null);
     const lo = Math.min(0.4, Math.floor((Math.min(...vals, 1) - 0.05) * 10) / 10);
     const n = hist.length, x = (i) => (n === 1 ? (l + r) / 2 : l + (r - l) * i / (n - 1));
     const y = (v) => b - (b - t) * (v - lo) / (1 - lo);
@@ -290,7 +299,7 @@
     const step = Math.max(1, Math.ceil(n / 8));
     hist.forEach((h, i) => { if (i % step === 0 || i === n - 1) g += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">#${i + 1}</text>`; });
     const ends = [];
-    for (const k of ["label", "teacher"]) {
+    for (const k of ["headset", "label", "teacher"]) {
       const s = SERIES[k], pts = hist.map((h, i) => ({ x: i, y: get(h, k) }));
       g += line(pts, x, y, s);
       g += hist.map((h, i) => {
@@ -301,10 +310,10 @@
           `${fmtTime(tot)} labelled\n${s.name}: AUC ${v.toFixed(2)}\nvalidation: ${h.validation}`);
       }).join("");
       const last = get(hist[n - 1], k);
-      if (last != null) ends.push({ y: y(last), text: `${k === "label" ? "Label" : "Teacher"} ${last.toFixed(2)}` });
+      if (last != null) ends.push({ y: y(last), text: `${{ headset: "Headset", label: "Label", teacher: "Brain-taught" }[k]} ${last.toFixed(2)}` });
     }
     g += endLabels(ends, r + 10);
-    box.innerHTML = svg(W, H, g) + legend(["label", "teacher"]);
+    box.innerHTML = svg(W, H, g) + legend(["headset", "label", "teacher"]);
     el("ch-history-note").textContent = n < 2
       ? "Each training adds a point here. Record more sessions and train again to see the model improve."
       : "Each point is one training. Scores tested on new sessions or new people are lower but more honest than within one session.";

@@ -1,0 +1,16 @@
+t_start,t_end,phase,label
+543.58,723.55,calib_rest,0
+723.55,734.7,calib_survey,
+734.7,854.72,calib_stress,1
+854.72,864.84,calib_survey,
+864.84,985.09,calib_recovery,
+985.09,1007.25,calibration_check,
+1007.25,1187.33,study_relax,0
+1187.33,1192.75,study_rating,
+1192.75,1372.74,study_math_easy,
+1372.74,1375.61,study_rating,
+1375.61,1555.75,study_math_hard,1
+1555.75,1559.52,study_rating,
+1559.52,1739.04,study_stroop_hard,1
+1739.04,1741.21,study_rating,
+1741.21,1741.34,study_done,

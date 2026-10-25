@@ -80,7 +80,12 @@ const state = {
 function connect() {
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   state.ws = ws;
-  ws.onopen = () => { $("conn").classList.add("on"); send({ type: "phase", name: state.phase }); };
+  ws.onopen = () => {
+    $("conn").classList.add("on");
+    // Only the tab running a protocol restores its phase after a reconnect: an idle tab (another window,
+    // a reload) must not reset the phase of a calibration running elsewhere.
+    if (state.busy) send({ type: "phase", name: state.phase });
+  };
   ws.onclose = () => { $("conn").classList.remove("on"); setTimeout(connect, 1000); };
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
@@ -241,12 +246,13 @@ function updateLive(m, hr) {
     const b = m.stress_body == null ? null : Math.round(m.stress_body);
     el.textContent = b ?? "—"; el.style.color = stressColor(b);
   });
-  const ml = $("ml-score");
-  ml.hidden = !m.learned;
-  if (m.learned) {
-    ml.title = `Gradient-boosted trees trained on ${m.learned.trained_on.length} session(s), validation AUC ${m.learned.cv_auc}. Starts after the first 45 s of a calibration.`;
-    const v = m.stress_ml == null ? null : Math.round(m.stress_ml);
-    const el = ml.querySelector("b");
+  for (const [id, info, value] of [["ml-score", m.learned, m.stress_ml], ["ml-score-headset", m.learned_headset, m.stress_ml_headset]]) {
+    const line = $(id);
+    line.hidden = !info;
+    if (!info) continue;
+    line.title = `Gradient-boosted trees (${info.name}) trained on ${info.trained_on.length} session(s), AUC ${info.cv_auc} on unseen data. Starts after the first 45 s of a calibration.`;
+    const v = value == null ? null : Math.round(value);
+    const el = line.querySelector("b");
     el.textContent = v ?? "—"; el.style.color = stressColor(v);
   }
 
