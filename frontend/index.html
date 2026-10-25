@@ -163,18 +163,23 @@
           <div class="card center">
             <h2>Live stress</h2>
             <div class="gauge" data-size="lg"></div>
-            <div class="chips" id="signal-chips"></div>
             <p class="muted small" id="score-source"></p>
-            <p class="body-score">Without headset (heart + face): <b data-live="stress-body">—</b></p>
-            <p class="body-score" id="personal-score" hidden title="Ridge regression trained on your calibration: heart + face predict your EEG stress">Your personal model (heart + face): <b>—</b></p>
-            <p class="body-score" id="ml-score-headset" hidden>Trained model with headset (brain): <b>—</b></p>
-            <p class="body-score" id="ml-score" hidden>Trained model without headset (heart + face): <b data-live="stress-ml">—</b></p>
-            <p class="muted small" id="calib-note">Calibrate to see your stress score.</p>
-            <canvas id="chart-setup" class="chart" aria-label="Both scores over the last two minutes"></canvas>
-            <div class="legend chart-legend">
-              <span><i class="line-full"></i>With headset (brain + heart + face)</span>
-              <span><i class="line-body"></i>Without headset (heart + face)</span>
+            <div class="duo">
+              <div class="duo-item"><span><i class="line-full"></i>Brain (EEG)</span><b data-live="stress-brain">—</b>
+                <small id="brain-src">the teacher · needs the headset</small></div>
+              <div class="duo-item"><span><i class="line-body"></i>Heart + face</span><b data-live="stress-body">—</b>
+                <small id="body-src">the student · learns from the brain</small></div>
             </div>
+            <p class="match" id="match-line" hidden></p>
+            <div class="chips" id="signal-chips"></div>
+            <p class="muted small" id="calib-note">Calibrate to see your stress score.</p>
+            <canvas id="chart-setup" class="chart" aria-label="Brain and heart + face scores over the last two minutes"></canvas>
+            <div class="legend chart-legend">
+              <span><i class="line-full"></i>Brain (EEG): the teacher</span>
+              <span><i class="line-body"></i>Heart + face: the student, should follow it</span>
+            </div>
+            <p class="hint">During the calibration, the heart + face model learns the weights that bring it as close as
+              possible to your EEG. The closer the two lines, the better your watch and webcam can replace the headset.</p>
           </div>
 
           <div class="card">
@@ -429,13 +434,13 @@
   <div class="present" id="present" hidden>
     <button class="present-close" id="present-close">Close (Esc)</button>
     <div class="present-scores">
-      <div class="pscore"><span>With headset</span><b id="p-full">—</b><small>brain + heart + face</small></div>
-      <div class="pscore body"><span>Without headset</span><b id="p-body">—</b><small>heart + face only</small></div>
+      <div class="pscore"><span>Brain (EEG)</span><b id="p-full">—</b><small>the teacher · headset</small></div>
+      <div class="pscore body"><span>Heart + face</span><b id="p-body">—</b><small>the student · watch + webcam</small></div>
     </div>
     <canvas id="present-sea" class="present-sea" aria-label="Boat on the sea, waves follow stress"></canvas>
     <canvas id="present-chart" class="present-chart" aria-label="Both scores over the last three minutes"></canvas>
     <div class="legend chart-legend present-legend">
-      <span><i class="line-full"></i>With headset</span><span><i class="line-body"></i>Without headset</span>
+      <span><i class="line-full"></i>Brain (EEG): the teacher</span><span><i class="line-body"></i>Heart + face: the student</span>
     </div>
   </div>
 

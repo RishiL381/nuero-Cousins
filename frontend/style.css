@@ -471,3 +471,15 @@ button.primary { color: var(--on-accent); }
 .present { background: linear-gradient(180deg, #0f2730 0%, #0b1d24 70%, #081419 100%); color: #fdf6e3; }
 .pscore { border-radius: 8px; border-width: 2px; background: rgba(253, 246, 227, 0.04); border-color: #2c5866; box-shadow: 0 3px 0 #06141a; }
 .pscore span, .pscore small, .present-legend { color: #9fc2ca; }
+
+/* Live: teacher (brain) and student (heart + face) side by side */
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 4px; }
+.duo-item { display: grid; gap: 2px; padding: 10px; border: 2px solid var(--border); border-radius: var(--radius); }
+.duo-item span { font-size: 0.8rem; color: var(--muted); }
+.duo-item span i { display: inline-block; width: 14px; height: 0; border-top: 3px solid; vertical-align: 3px; margin-right: 6px; }
+.duo-item span .line-full { border-color: var(--accent); }
+.duo-item span .line-body { border-color: #e08a3c; border-top-style: dashed; }
+.duo-item b { font-family: var(--font-pixel); font-size: 2rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.duo-item small { font-size: 0.72rem; color: var(--muted); }
+.match { margin: 6px 0 0; font-size: 0.85rem; font-weight: 500; }
+.match.good { color: var(--good); } .match.fair { color: var(--fair); } .match.bad { color: var(--bad); }

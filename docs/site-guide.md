@@ -76,19 +76,18 @@ The page has four steps, shown top to bottom. A step turns green when it is done
 
 ## 4. Step 3: Live
 
-**The gauge (main score, 0 = your calm, 100 = your stress test)** uses the best source available, in this order:
+**The Live panel is the pitch on one screen: the brain teaches, heart + face learn.**
 
-| # | Source | When |
-|---|---|---|
-| 1 | Trained brain model | headset streaming, a model trained in step 4, and a calibration in this session |
-| 2 | Calibration rule with the EEG (brain + heart + face) | headset streaming, no trained model yet |
-| 3 | Personal heart + face model | no headset, trained at the end of this calibration |
-| 4 | Trained heart + face model | no headset, a model trained in step 4 |
-| 5 | Calibration rule on heart + face | otherwise |
+| Element | What it shows |
+|---|---|
+| **Brain (EEG)**, the teacher | the trained brain model when one is installed (tested across people), else the EEG part of your calibration. Only while the headset streams. |
+| **Heart + face**, the student | your **personal model**: at the end of your calibration it learns the weights that bring heart + face as close as possible to your EEG. Retrained after the study blocks. Fallbacks: the trained heart + face model, then the calibration rule. |
+| **Gauge** | the brain while the headset is on; the student once it is off |
+| **"Heart + face follows the brain: r = …"** | correlation of the two scores over the last 2 minutes. 1 = identical curves. Above 0.6, the watch and webcam can stand in for the headset. |
+| **Chart** | both scores over the last 2 minutes: brain solid, heart + face dashed |
 
-- The line under the gauge says which source is used ("Score from: …").
-- The lines below the gauge show the other scores side by side: without headset, trained model with and without headset.
-- The trained models start 45 s into a calibration. They need that rest to measure the person's baseline and alpha frequency.
+- The lines under each number say which model produced it.
+- Everything starts after a calibration: the models need its first 45 s of rest.
 
 **Other elements**
 - **Chips:** which signal groups (brain, heart, face) feed the score right now.

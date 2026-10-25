@@ -135,7 +135,7 @@ const handlers = {
     if (state.session && state.session.recording) {
       state.history.push({ t: m.t, phase: state.phase, stress: m.stress, hr });
     }
-    state.live.push({ t: m.t, stress: m.stress, body: m.stress_body, ratio: m.eeg ? m.eeg.ratio_log : null });
+    state.live.push({ t: m.t, stress: m.stress, brain: m.stress_brain, body: m.stress_body, ratio: m.eeg ? m.eeg.ratio_log : null });
     while (state.live.length && state.live[0].t < m.t - 120) state.live.shift();
     updateLive(m, hr);
   },
@@ -276,26 +276,14 @@ function updateLive(m, hr) {
       : live ? `${label}: feeding the score now` : `${label}: used, but no clean signal right now`;
     return `<span class="chip ${cls}" title="${tip}">${label} ${!used ? "✗" : live ? "✓" : "…"}</span>`;
   }).join("");
-  document.querySelectorAll('[data-live="stress-body"]').forEach((el) => {
-    const b = m.stress_body == null ? null : Math.round(m.stress_body);
-    el.textContent = b ?? "—"; el.style.color = stressColor(b);
-  });
-  const pm = $("personal-score"), pr = state.baseline && state.baseline.personal;
-  pm.hidden = !(pr && pr.ok);
-  if (pr && pr.ok) {
-    const v = m.stress_personal == null ? null : Math.round(m.stress_personal);
-    const el = pm.querySelector("b");
-    el.textContent = v ?? "—"; el.style.color = stressColor(v);
-  }
-  for (const [id, info, value] of [["ml-score", m.learned, m.stress_ml], ["ml-score-headset", m.learned_headset, m.stress_ml_headset]]) {
-    const line = $(id);
-    line.hidden = !info;
-    if (!info) continue;
-    line.title = `Gradient-boosted trees (${info.name}) trained on ${info.trained_on.length} session(s), AUC ${info.cv_auc} on unseen data. Starts after the first 45 s of a calibration.`;
+  // Teacher (brain) and student (heart + face), side by side
+  for (const [key, value] of [["stress-brain", m.stress_brain], ["stress-body", m.stress_body]]) {
     const v = value == null ? null : Math.round(value);
-    const el = line.querySelector("b");
-    el.textContent = v ?? "—"; el.style.color = stressColor(v);
+    document.querySelectorAll(`[data-live="${key}"]`).forEach((el) => { el.textContent = v ?? "—"; el.style.color = stressColor(v); });
   }
+  $("brain-src").textContent = m.stress_brain_source ? `the teacher · ${m.stress_brain_source}` : "the teacher · needs the headset";
+  $("body-src").textContent = m.stress_body_source ? `the student · ${m.stress_body_source}` : "the student · learns from the brain";
+  updateMatch();
 
   $("calib-note").hidden = !!m.calibrated;
   const err = $("engine-error");
@@ -315,6 +303,23 @@ function updateLive(m, hr) {
 }
 const BODY_COLOR = "#e08a3c";
 // With headset (solid, accent) and without headset (dashed, orange) over the last two minutes
+// How closely the student follows the teacher: correlation of the two scores over the last 2 minutes
+function updateMatch() {
+  const now = state.latest ? state.latest.t : 0;
+  const pts = state.live.filter((p) => p.t > now - 120 && p.brain != null && p.body != null);
+  const line = $("match-line");
+  line.hidden = pts.length < 40;  // at least 20 s of both
+  if (line.hidden) return;
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const b = pts.map((p) => p.brain), h = pts.map((p) => p.body), mb = mean(b), mh = mean(h);
+  const cov = b.reduce((s, v, i) => s + (v - mb) * (h[i] - mh), 0);
+  const den = Math.sqrt(b.reduce((s, v) => s + (v - mb) ** 2, 0) * h.reduce((s, v) => s + (v - mh) ** 2, 0));
+  const r = den ? cov / den : 0;
+  const verdict = r >= 0.6 ? "follows the brain well" : r >= 0.3 ? "partly follows the brain" : "does not follow the brain yet";
+  line.className = `match ${r >= 0.6 ? "good" : r >= 0.3 ? "fair" : "bad"}`;
+  line.textContent = `Heart + face ${verdict}: r = ${r.toFixed(2)} over the last ${Math.round((pts[pts.length - 1].t - pts[0].t))} s`;
+}
+
 function drawScoresChart(canvas, seconds = 120, width = 2.5, fullColor = null) {
   const calibrated = state.latest && state.latest.calibrated;
   const now = state.latest ? state.latest.t : 0;
@@ -323,7 +328,8 @@ function drawScoresChart(canvas, seconds = 120, width = 2.5, fullColor = null) {
       { tMin: now - seconds, tMax: now, auto: true, label: "raw EEG alpha/beta (log) until you calibrate" });
     return;
   }
-  drawChart(canvas, state.live.map((p) => ({ t: p.t, v: p.stress })), {
+  const hasBrain = state.live.some((p) => p.t > now - seconds && p.brain != null);
+  drawChart(canvas, state.live.map((p) => ({ t: p.t, v: hasBrain ? p.brain : p.stress })), {
     tMin: now - seconds, tMax: now, lineColor: fullColor || cssVar("--accent"), lineWidth: width,
     extra: [{ pts: state.live.map((p) => ({ t: p.t, v: p.body })), color: BODY_COLOR, dash: [6, 5], width }],
   });
@@ -366,7 +372,7 @@ function togglePresent(show = !presentOpen()) {
 }
 function updatePresent(m) {
   const set = (id, v) => { const r = v == null ? null : Math.round(v); $(id).textContent = r ?? "—"; $(id).style.color = r == null ? "#a9bccb" : stressColor(r, 62); };
-  set("p-full", m.stress);
+  set("p-full", m.stress_brain);
   set("p-body", m.stress_body);
   drawScoresChart($("present-chart"), 180, 4, "#5b9be0");
 }

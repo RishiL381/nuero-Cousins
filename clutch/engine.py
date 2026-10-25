@@ -109,6 +109,7 @@ class StressModel:
     _smoothed: dict = field(default_factory=dict)
     _dropped: dict = field(default_factory=dict)  # signal -> {reason: windows rejected during calibration}
     personal: PersonalModel | None = None  # heart + face -> EEG stress, trained on this person's calibration
+    brain_rule: float | None = None  # last brain-only score of the calibration rule (0-100), set by score()
     _calib_ticks: dict = field(default_factory=dict)  # the last good calibration's ticks, per phase
     _study_ticks: dict = field(default_factory=dict)  # study phase -> ticks since the last calibration
     iaf: float | None = None  # individual alpha frequency of the last good calibration (Hz)
@@ -343,6 +344,7 @@ class StressModel:
 
         full = self._smooth("full", combine(GROUPS), dt)
         body = self._smooth("body", combine([g for g in GROUPS if g not in HEADSET_GROUPS]), dt)
+        self.brain_rule = self._smooth("brain", combine(["brain"]), dt)  # the EEG alone: the teacher
         out = {k: round(v, 2) for k, v in parts.items()}
         brain = [k for k in GROUPS["brain"] if k in parts]
         if brain:  # group position kept under "eeg" for loggers that read one brain value (clutch/face.py)
@@ -366,7 +368,7 @@ class SessionLogger:
     CHANNELS = ("TP9", "AF7", "AF8", "TP10")
     CHANNEL_COLS = ([f"{b}_{ch}" for ch in CHANNELS for b in ("alpha", "beta", "theta", "gamma", "alphashare", "alphalog")]
                     + [f"q_{ch}" for ch in CHANNELS] + [f"muscle_{ch}" for ch in CHANNELS])
-    METRIC_COLS = (["t", "phase", "stress", "stress_body", "stress_ml", "stress_ml_headset", "stress_personal", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
+    METRIC_COLS = (["t", "phase", "stress", "stress_brain", "stress_body", "stress_ml", "stress_ml_headset", "stress_personal", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
                     "hr_bpm", "hr_quality", "hr_source", "hrv_rmssd", "motion", "usable_channels", "contact"]
                    + FACE_COLS + CHANNEL_COLS)
 
@@ -410,7 +412,7 @@ class SessionLogger:
             contact = "".join(c["q"][0] for c in eeg.get("channels", {}).values())  # e.g. "ggfb"
             face = m.get("face") or {}
             self._writers["metrics.csv"].writerow(
-                [m["t"], m["phase"], m["stress"], m.get("stress_body"), m.get("stress_ml"), m.get("stress_ml_headset"), m.get("stress_personal"), m["z"].get("eeg"), m["z"].get("hr"),
+                [m["t"], m["phase"], m["stress"], m.get("stress_brain"), m.get("stress_body"), m.get("stress_ml"), m.get("stress_ml_headset"), m.get("stress_personal"), m["z"].get("eeg"), m["z"].get("hr"),
                  eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
                  hr.get("bpm"), hr.get("quality"), hr.get("source"), hr.get("rmssd"), m["motion"].get("level"),
                  eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS]
@@ -594,18 +596,29 @@ class Engine:
             # Main score: the trained brain model while the headset streams, else the calibration rule with the
             # EEG; without the headset, the personal model from this calibration, the trained heart + face model,
             # else the calibration rule on heart + face.
+            # Two scores, the pitch in one panel:
+            #   brain = the teacher: the trained brain model when installed (tested across people), else the EEG
+            #           part of this calibration; only while the headset streams.
+            #   body  = the student: heart + face. The personal model, trained at the end of this calibration to
+            #           follow the EEG; else the trained heart + face model; else the calibration rule.
+            # The main score is the brain while the headset is on, the student once it is off.
             headset_on = eeg is not None and feats.get("usable", 0) > 0
-            stress, source = next(((v, name) for v, name in (
+            brain_score, brain_src = next(((v, n) for v, n in (
                 (ml_headset if headset_on else None, "trained brain model"),
-                (full if headset_on else None, "calibration (brain + heart + face)"),
-                (personal, "personal heart + face model (this calibration)"),
+                (self.model.brain_rule if headset_on else None, "your calibration (EEG)")) if v is not None), (None, None))
+            body_score, body_src = next(((v, n) for v, n in (
+                (personal, "personal model, taught by your EEG"),
                 (ml, "trained heart + face model"),
-                (body, "calibration (heart + face)")) if v is not None), (None, None))
+                (body, "your calibration (heart + face)")) if v is not None), (None, None))
+            stress, source = ((brain_score, f"brain: {brain_src}") if brain_score is not None else
+                              (body_score, f"heart + face: {body_src}") if body_score is not None else (None, None))
             self.seq += 1
             m = {
                 "type": "metrics", "seq": self.seq, "t": self.now(), "phase": self.phase,
-                "stress": stress, "stress_source": source, "stress_body": body, "stress_ml": ml,
-                "stress_ml_headset": ml_headset, "stress_personal": personal,
+                "stress": stress, "stress_source": source,
+                "stress_brain": brain_score, "stress_brain_source": brain_src,
+                "stress_body": body_score, "stress_body_source": body_src, "stress_body_rule": body,
+                "stress_ml": ml, "stress_ml_headset": ml_headset, "stress_personal": personal,
                 "learned": self.learned.info if self.learned else None,
                 "learned_headset": self.learned_headset.info if self.learned_headset else None,
                 "calibrated": self.model.calibration is not None,
