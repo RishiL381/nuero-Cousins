@@ -57,6 +57,7 @@ N_BLOCKS, GAP_S = 5, 15.0
 # Screens where the person reads or fills in a form (report, questionnaires, ratings): alpha drops with any
 # visual attention, so these would teach "reading" rather than stress.
 SKIP_PHASES = {"idle", "ready", "results", "calibration_check", "calib_survey", "study_rating", "study_done"}
+MIN_LIVE_AUC = 0.6  # a model is installed in the app only above this AUC on unseen data
 PARAMS = dict(max_iter=150, learning_rate=0.05, max_depth=3, min_samples_leaf=20, l2_regularization=1.0, random_state=0)
 
 
@@ -336,14 +337,24 @@ def main():
                          "trained_on": report["sessions"], "cv_auc": aucs[kind], "validation": validation},
                         out / f"{kind}.joblib")
         best = max(aucs, key=aucs.get)
-        shutil.copy2(out / f"{best}.joblib", out / "headset_free.joblib")
         report["live_model"] = best
+        # A model that does not beat chance clearly on unseen data must not drive the app: the app then falls
+        # back to the personal model of the current calibration.
+        if aucs[best] >= MIN_LIVE_AUC:
+            shutil.copy2(out / f"{best}.joblib", out / "headset_free.joblib")
+        else:
+            (out / "headset_free.joblib").unlink(missing_ok=True)
+            report["live_model"] = None
+            print(f"\nNo heart + face model installed: best AUC {aucs[best]:.2f} < {MIN_LIVE_AUC} on unseen data")
         feats = [k for k in FEATURE_SETS[with_headset] if df[k].notna().any()]
         model, _ = fit("label", df[feats].to_numpy(dtype=float), None, lab.to_numpy())
-        joblib.dump({"name": f"with headset ({with_headset})", "kind": "label", "model": model, "scale": None,
-                     "features": feats, "baseline_s": BASELINE_S, "smooth_s": SMOOTH_S,
-                     "trained_on": report["sessions"], "cv_auc": report["results"][f"label:{with_headset}"]["auc"],
-                     "validation": validation}, out / "with_headset.joblib")
+        if (report["results"][f"label:{with_headset}"].get("auc") or 0) >= MIN_LIVE_AUC:
+            joblib.dump({"name": f"with headset ({with_headset})", "kind": "label", "model": model, "scale": None,
+                         "features": feats, "baseline_s": BASELINE_S, "smooth_s": SMOOTH_S,
+                         "trained_on": report["sessions"], "cv_auc": report["results"][f"label:{with_headset}"]["auc"],
+                         "validation": validation}, out / "with_headset.joblib")
+        else:
+            (out / "with_headset.joblib").unlink(missing_ok=True)
         report["trained_at"] = time.strftime("%Y-%m-%d %H:%M")
         (out / "report.json").write_text(json.dumps(report))
         hist_path = out / "history.json"  # one entry per training, to show progress as the dataset grows

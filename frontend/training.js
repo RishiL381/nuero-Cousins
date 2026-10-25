@@ -99,7 +99,8 @@
       ? `Trained ${rep.trained_at || ""} on ${rep.sessions.length} session${rep.sessions.length > 1 ? "s" : ""}. ` +
         `Live with the headset: ${HEADSET_SETS[rep.with_headset] || "brain"} model ` +
         `(AUC ${fmtAuc((rep.results[`label:${rep.with_headset || "brain"}`] || {}).auc)}); without: ` +
-        `${rep.live_model === "teacher" ? "brain-taught" : "label"} model (AUC ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)}).` +
+        (rep.live_model ? `${rep.live_model === "teacher" ? "brain-taught" : "label"} model (AUC ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)}).`
+          : "no trained heart + face model: none beat chance on unseen data, so the personal model of each calibration is used.") +
         (rep.iaf ? ` Your alpha frequency: ${Object.values(rep.iaf).map((v) => v.toFixed(1)).join(", ")} Hz.` : "")
       : "No model trained yet.";
 
@@ -107,7 +108,7 @@
     el("sn-4").classList.toggle("done", done);
     el("ss-4").className = "step-state" + (done ? " ok" : "");
     el("ss-4").textContent = done ? `✓ Models trained · AUC on unseen data: ${fmtAuc((rep.results[`label:${rep.with_headset || "brain"}`] || {}).auc)} ` +
-        `with headset, ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)} without`
+        `with headset, ${rep.live_model ? fmtAuc(rep.results[SERIES[rep.live_model].key].auc) : "personal calibration"} without`
       : ds ? "Dataset ready: train the model"
       : ok.length ? `${ok.length} session${ok.length > 1 ? "s" : ""} ready: build the dataset`
       : "Record calibrations or study sessions first";
@@ -125,7 +126,7 @@
 
   function renderResults(rep) {
     SERIES.headset.key = `label:${rep.with_headset || "brain"}`;
-    const live = rep.live_model;
+    const live = rep.live_model || "teacher";
     const res = (k) => rep.results[SERIES[k].key] || {};
     const secs = rep.seconds || {};
     const kpi = (k, v, s, color) => `<div class="tr-kpi"><div class="k">${color ? `<i style="background:${color}"></i>` : ""}${k}</div>
@@ -133,7 +134,7 @@
     el("tr-kpis").innerHTML =
       kpi("With headset · live", fmtAuc(res("headset").auc),
         `${HEADSET_SETS[rep.with_headset] || "brain"}, AUC on unseen data`, SERIES.headset.color) +
-      kpi("Without headset · live", fmtAuc(res(live).auc),
+      kpi(rep.live_model ? "Without headset · live" : "Without headset (not installed)", fmtAuc(res(live).auc),
         `heart + face, ${live === "teacher" ? "taught by the brain" : "label model"}, AUC on unseen data`, SERIES[live].color) +
       kpi("Brain → body", res("teacher").imitation_r == null ? "—" : `r ${res("teacher").imitation_r.toFixed(2)}`,
         "how well heart + face reproduce the brain model's estimate (1 = perfectly)") +
@@ -197,7 +198,7 @@
       y2="${H - 20}"/>${v * 4 % 2 ? "" : `<text x="${x(v)}" y="${H - 6}" text-anchor="middle">${v === 0.5 ? "0.5 chance" : v}</text>`}`).join("");
     MODEL_ROWS.forEach(([key, name, color], i) => {
       const r = rep.results[key] || {}, y = top + i * rowH;
-      const live = key === SERIES[rep.live_model].key || key === SERIES.headset.key;
+      const live = (rep.live_model && key === SERIES[rep.live_model].key) || key === SERIES.headset.key;
       if (key === SERIES.headset.key) color = SERIES.headset.color;
       g += `<text x="${labelW}" y="${y + 19}" text-anchor="end"${live ? ' class="val"' : ""}>${esc(name)}${live ? " · live" : ""}</text>`;
       if (r.auc == null) { g += `<text x="${x0 + 4}" y="${y + 19}">no data</text>`; return; }

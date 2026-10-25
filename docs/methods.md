@@ -152,6 +152,33 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
   - `headset_free.joblib`: the better of the label and brain-taught heart + face models.
   - Both start scoring 45 s into a calibration, next to the rule-based scores, with ~5 s output smoothing.
 
+**Results with a second person (P02, 1 study session, heart rate from a Garmin watch), 25 October afternoon.**
+
+Leave-one-person-out: trained on one person, tested on the other.
+
+| Signals | AUC on the unseen person |
+|---|---|
+| **brain** | **0.87** (0.83 on P02, 0.94 on P01) |
+| brain + muscle | 0.87 |
+| muscle | 0.64 |
+| heart + face (one model for everyone) | 0.38 |
+| brain-taught heart + face, one model for everyone | 0.40 |
+
+- **The brain transfers from one person to another. Heart and face do not:** their changes under stress go in opposite directions in the two people.
+- **Models below chance are no longer installed.** `train_model.py` installs a model in the app only above AUC 0.6 on unseen data. Without the headset, the app then uses the personal model of the current calibration.
+
+Per person: the person's own calibration sets the EEG rule (the teacher), a heart + face student learns it on that calibration, and both are judged on the person's study blocks that follow.
+
+| | P01 session 2 | P02 |
+|---|---|---|
+| EEG rule from the calibration (teacher) | 0.86 | 0.78 |
+| heart + face student taught by the EEG rule | 0.71 | 0.60 |
+| heart + face student fitted on the labels (no teacher) | 0.22 | 0.68 |
+
+- **The EEG calibrated on the person works for both people.**
+- **The headset-free student reaches 0.60–0.71.** The teacher helped clearly for P01 but not for P02.
+- With two people this is a pilot result, not a proof.
+
 **Results, P01, 2 sessions (25 October), IAF bands, leave-one-session-out, AUC on the unseen session:**
 
 | Model | Signals | Session 1 | Session 2 | Pooled |

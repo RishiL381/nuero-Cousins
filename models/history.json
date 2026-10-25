@@ -97,5 +97,27 @@
       "label:heart": 0.645,
       "teacher:headset_free": 0.648
     }
+  },
+  {
+    "trained_at": "2026-10-25 13:43",
+    "sessions": 3,
+    "seconds": {
+      "rest": 758,
+      "stress": 1058,
+      "unlabelled": 704
+    },
+    "validation": "leave-one-participant-out",
+    "live_model": null,
+    "with_headset": "brain",
+    "auc": {
+      "label:full": 0.379,
+      "label:headset": 0.871,
+      "label:brain": 0.871,
+      "label:muscle": 0.644,
+      "label:headset_free": 0.378,
+      "label:face": 0.382,
+      "label:heart": 0.373,
+      "teacher:headset_free": 0.395
+    }
   }
 ]

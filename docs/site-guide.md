@@ -187,17 +187,23 @@ No image or video is ever recorded.
 
 ---
 
-## 9. Current state (25 October)
+## 9. Current state (25 October, evening)
 
-**Dataset:** 1 person (P01), 2 sessions, about 17 minutes of labelled data, heart rate from the Muse forehead sensor.
+**Dataset:** 2 people, 3 sessions (P01 × 2 with the Muse forehead pulse; P02 × 1 with a Garmin watch), about 30 minutes labelled.
 
-**Results, on a session the model never saw:**
-- brain alone: AUC 0.87 (0.95 and 0.88 per session);
-- muscle alone: at chance;
-- heart + face: 0.72;
-- heart + face do not yet reproduce the brain (r ≈ 0.03).
+**Trained on one person, tested on the other:**
+- brain: AUC 0.87;
+- muscle: 0.64;
+- one heart + face model for everyone: below chance (0.38). It is therefore not installed (installation requires AUC ≥ 0.6).
+
+**Per person** (the person's own calibration, judged on their study blocks):
+- EEG rule: 0.86 (P01) and 0.78 (P02);
+- heart + face student taught by it: 0.71 and 0.60.
+
+**What this means for the pitch:**
+- The headset calibrates each person reliably.
+- Without the headset, a personal model trained on that calibration does better than a model shared by everyone. It is still weaker than the brain.
 
 **Open points:**
-- more sessions with the watch;
-- other people;
+- more people and more sessions with the watch;
 - the easy-math control still scores high with the brain model, so part of what it detects is "doing a task".
