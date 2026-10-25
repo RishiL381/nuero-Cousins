@@ -149,20 +149,41 @@ Then open http://localhost:8000.
 
 ---
 
-## 6. Status
+## 6. Status (end of day 1, 24 October)
+
+### What changed since this document was first written
+- **Calibration** is now a research-based protocol with two anchors and per-signal Cohen's d. See `docs/methods.md`.
+  - **Steps:** vanilla baseline, STAI-6, stressor, STAI-6, recovery.
+  - **Stressors:** quick math (default), Stroop, or serial subtraction.
+  - **Presets:** Standard (~9 min) and Short (~3 min).
+  - **Score:** 0 = your baseline, 100 = your stress-test level.
+- **Muse connection** happens from the web app (Connect / Disconnect, live status, automatic reconnection). Start the app with `.venv\Scripts\python -m clutch --source muselsl --name Muse-3724`.
+- **Face sensor** (home page, `frontend/face-sensor.js`): MediaPipe runs locally and gives 7 indicators. They join the calibration, and the app shows a second, **headset-free score** (heart + face).
+- **Riley's face tracker page** (`face.html`): 14 action units and micro-expressions, with its own logger (`clutch/face.py`). Merged.
+- **Dataset recording:** participant code and consent, raw EEG/PPG/ACC and face features. `tools/export_dataset.py` builds the anonymised zip (`docs/dataset.md`). First session published in `data/clutch_dataset/` (P01).
+
+### Status
 
 | Item | Status |
 |---|---|
-| Full pipeline on simulated data (tests pass) | ✅ Verified |
-| Muse connects over Bluetooth and streams EEG, PPG and ACC into the app | ✅ Verified |
-| Good electrode contact on a real head | ❌ **Not achieved yet:** all four channels at 300–600 µV |
-| Stress score on real data | ❌ Blocked by contact |
-| Sea widget rendering (calm and storm) | ✅ Verified on simulated data |
-| Always-on-top widget window, breathing screen, full session on screen | ⚠️ Not visually verified |
-| Automatic reconnection after a disconnect | ⚠️ Implemented, not verified |
-| Code on GitHub | ✅ https://github.com/RishiL381/nuero-Cousins |
+| Muse streams into the app, connected from the web page | ✅ Verified on Muse-3724 (00:55:DA:B6:37:24) |
+| Electrode contact | ⚠️ Front (AF7/AF8) good once adjusted; behind the ears (TP9) often fair or bad |
+| Real calibration (P01, standard protocol, quick math) | ✅ STAI-6 27 → 63. Heart rate +6 bpm (d = 2.78), blinks 12 → 4 per minute (d = 2.80). Brain not used (median of the 4 channels: no change). |
+| Per-sensor EEG analysis of that session | ✅ Right forehead **AF8: alpha down, d = 1.14** (expected direction). TP9/TP10 went the other way, AF7 shows a likely muscle artefact. The median cancelled the signal. |
+| Headset-free score (heart + face) on a real person | ✅ Available for P01 (heart + blinks) |
+| Dataset export (anonymised) | ✅ Tested and published (1 session) |
+| Always-on-top widget, breathing screen, full pressure session | ⚠️ Not visually verified |
+| Garmin heart rate | ❌ Not started (watch model needed) |
 
-**Immediate priority:** get green contact on one person (or switch to Muse B or C), run a real calibration, and record a first real session.
+### Next steps (day 2)
+1. **Per-sensor EEG** (decided, not yet built):
+   - compare each channel with itself between baseline and stress;
+   - use relative alpha (supported by the Vanhollebeke et al. 2022 meta-analysis) instead of alpha/beta;
+   - add a head map in the profile.
+   It adds dataset columns, so **do it before recording other participants**.
+2. **Record the team:** about 4 people × 2 calibrations, Standard protocol, camera on, consent ticked, codes P2, P3… Then export and send.
+3. **Garmin:** enable heart-rate broadcast and add it as a Bluetooth heart-rate source that replaces the Muse PPG.
+4. **Demo prep:** headset score and headset-free score side by side, sea widget, pitch numbers from the recorded sessions.
 
 ---
 
