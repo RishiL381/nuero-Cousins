@@ -1,0 +1,21 @@
+{
+  "kind": "study",
+  "consent": true,
+  "protocol": "standard",
+  "stressor": "math",
+  "protocol_seconds": {
+    "rest": 180,
+    "stress": 120,
+    "recovery": 120
+  },
+  "camera": true,
+  "headset_streaming": true,
+  "device": {
+    "name": "Muse-3724",
+    "address": "63D9C6BD-AAAB-CFA9-EB57-A9B746AF1D00"
+  },
+  "started_at": "2026-10-25T19:51:47.206Z",
+  "study_order": "A",
+  "block_seconds": 180,
+  "participant": "P02"
+}
