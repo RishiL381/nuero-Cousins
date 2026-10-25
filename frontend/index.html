@@ -111,31 +111,28 @@
                 recordings (EEG, heart rate, face numbers; no images) are shared to train a model</label>
             </div>
           </div>
-          <div class="calib-actions">
-            <button id="btn-calibrate" class="primary big-btn">Start calibration</button>
-            <p class="hint" id="ds-status">Every recorded calibration becomes labelled data (baseline = 0, stress test = 1).
-              Build the zip to send with <code>.venv\Scripts\python tools\export_dataset.py</code></p>
+          <div class="study-form">
+            <label>Study order
+              <select id="study-order">
+                <option value="A">A: relax, easy math, hard math, hard colour words</option>
+                <option value="B">B: relax, hard colour words, hard math, easy math</option>
+              </select>
+            </label>
+            <label>Block length
+              <select id="study-block">
+                <option value="180">3 min per block (recommended)</option>
+                <option value="120">2 min per block</option>
+              </select>
+            </label>
           </div>
-          <details class="study-more">
-            <summary>Study protocol (longer, for the dataset)</summary>
-            <div class="study-form">
-              <label>Study order
-                <select id="study-order">
-                  <option value="A">A: relax, easy math, hard math, hard colour words</option>
-                  <option value="B">B: relax, hard colour words, hard math, easy math</option>
-                </select>
-              </label>
-              <label>Block length
-                <select id="study-block">
-                  <option value="180">3 min per block (recommended)</option>
-                  <option value="120">2 min per block</option>
-                </select>
-              </label>
-              <button id="btn-study" class="primary">Run study protocol</button>
-            </div>
-            <p class="hint">Study protocol (EPIStress-style): calibration, then relaxation, easy math, hard math and hard
-              colour words, with a 1-5 stress rating after each block. Alternate orders A and B between participants.</p>
-          </details>
+          <div class="calib-buttons">
+            <button id="btn-study" class="primary big-btn">Run study protocol · about 25 min</button>
+            <button id="btn-calibrate" class="big-btn">Calibration only · about 9 min</button>
+          </div>
+          <p class="hint" id="ds-status"><b>To build a dataset, use the study protocol:</b> the calibration, then
+            relaxation, easy math, hard math and hard colour words, with a 1–5 stress rating after each block. Everything
+            is recorded as one session when “Record for the dataset” is ticked. Alternate orders A and B between sessions,
+            then go to step 4.</p>
         </div>
       </div>
 
