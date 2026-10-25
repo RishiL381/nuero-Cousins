@@ -1,6 +1,6 @@
 """Checks the Bluetooth heart rate decoding and RMSSD (no device needed).
 
-Run: .venv\Scripts\python tests\test_watch.py   (or pytest)
+Run: .venv\\Scripts\\python tests\\test_watch.py   (or pytest)
 """
 
 import sys
