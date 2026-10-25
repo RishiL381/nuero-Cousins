@@ -16,6 +16,9 @@ BANDS = {
     "beta": (13.0, 30.0),
     "gamma": (30.0, 44.0),
 }
+# Relative 30-44 Hz power above which a channel window is treated as muscle-contaminated. Set on the first
+# real session: clean temporal channels sat around 0.01, a tense forehead channel around 0.13.
+MUSCLE_GAMMA = 0.10
 
 
 def _band_power(freqs: np.ndarray, psd: np.ndarray, lo: float, hi: float) -> np.ndarray:
@@ -102,6 +105,13 @@ def eeg_features(eeg_raw: np.ndarray, fs: float, names: list[str], notch_hz: flo
         # Absolute alpha power, log10(uV^2): blinks add almost nothing at 8-12 Hz, so this is the most
         # blink-robust alpha measure when a channel is compared with itself within one session.
         ch["alphalog"] = round(float(np.log10(powers["alpha"][i] + 1e-12)), 4)
+        ch["thetalog"] = round(float(np.log10(powers["theta"][i] + 1e-12)), 4)  # same, for model training
+        ch["betalog"] = round(float(np.log10(powers["beta"][i] + 1e-12)), 4)
+        # Muscle (EMG) check: on scalp EEG, 30-44 Hz power comes mostly from forehead and jaw muscles, which
+        # also spill into beta and alpha (Goncharova et al., 2003). Such a window says nothing about the brain.
+        ch["muscle"] = bool(ch["gamma"] > MUSCLE_GAMMA)
+        if ch["muscle"] and ch["q"] != "bad":
+            ch["why"] = "muscle tension: relax forehead and jaw"
         channels[name] = ch
         if quality[i]["q"] != "bad":
             usable_ratios.append(np.log10((powers["alpha"][i] + 1e-12) / (powers["beta"][i] + 1e-12)))
@@ -141,9 +151,14 @@ def heart_rate(ppg: np.ndarray, fs: float) -> dict:
     if len(ibi) < 4:
         return {"bpm": None, "quality": 0.0, "spec_bpm": round(spec_bpm, 1)}
 
-    bpm = float(60.0 / np.median(ibi))
-    cv = float(np.std(ibi) / np.mean(ibi))
-    quality = max(0.0, 1.0 - cv / 0.25)
+    # A missed or extra peak gives one wildly wrong interval; judge quality by the share of intervals that
+    # agree with the median instead of their overall spread, which one bad interval ruins.
+    med = float(np.median(ibi))
+    good = np.abs(ibi - med) < 0.15 * med
+    if good.sum() < 3:
+        return {"bpm": None, "quality": 0.0, "spec_bpm": round(spec_bpm, 1)}
+    bpm = float(60.0 / np.mean(ibi[good]))
+    quality = max(0.0, (float(good.mean()) - 0.5) / 0.5)
     if abs(bpm - spec_bpm) > 12:  # beat detector and spectrum disagree: likely noise
         quality *= 0.4
     return {"bpm": round(bpm, 1), "quality": round(quality, 2), "spec_bpm": round(spec_bpm, 1)}

@@ -6,3 +6,6 @@ numpy
 scipy
 fastapi
 uvicorn[standard]
+scikit-learn  # tools/train_model.py and the trained model in the app
+pandas
+joblib

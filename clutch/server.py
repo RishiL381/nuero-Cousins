@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .engine import Config, Engine
 from .face import FaceLogger
+from .learned import LiveScorer
 from .sources import MUSE_BOARDS, LslSource, MockSource, MuseSource
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -148,9 +149,13 @@ def main(argv=None):
         source = MuseSource(args.board, args.name, args.mac_address, args.ppg_preset)
     else:
         source = MockSource()
-    engine = Engine(source, Config(notch_hz=args.notch), ROOT / "sessions")
+    learned = LiveScorer.load(ROOT / "models" / "headset_free.joblib")  # written by tools/train_model.py --save models
+    engine = Engine(source, Config(notch_hz=args.notch), ROOT / "sessions", learned)
 
     import uvicorn
     print(f"Clutch running with {args.source} source -> http://{args.host}:{args.port}")
+    if learned:
+        print(f"Learned model loaded (heart + face, trained on {len(learned.info['trained_on'])} sessions, "
+              f"validation AUC {learned.info['cv_auc']})")
     # Open browser tabs keep WebSockets alive: without a timeout, Ctrl-C would wait for them forever.
     uvicorn.run(create_app(engine), host=args.host, port=args.port, log_level="warning", timeout_graceful_shutdown=3)

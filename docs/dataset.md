@@ -60,11 +60,12 @@ sessions/<id>/     raw data per session
 | Column | Meaning |
 |---|---|
 | alphalog_\<ch\> | **log10 absolute alpha power (µV²): the brain feature the app uses.** Robust to blinks. |
-| alpha_\<ch\>, beta_\<ch\>, theta_\<ch\> | relative band power of that channel (share of 1–45 Hz) |
+| alpha_\<ch\>, beta_\<ch\>, theta_\<ch\>, gamma_\<ch\> | relative band power of that channel (share of 1–45 Hz) |
 | alphashare_\<ch\> | alpha share of 4–30 Hz power |
 | q_\<ch\> | contact quality of that channel: good, fair or bad. Ignore the channel's values when it is bad. |
+| muscle_\<ch\> | True when 30–44 Hz power is above 0.10: forehead or jaw muscle tension. Ignore the channel's values then. |
 
-Compare each channel with itself: channels can react in opposite directions, so averaging them can hide the effect. Sessions recorded before 25 October lack these columns; compute them from `raw_eeg.csv` if needed.
+Compare each channel with itself: channels can react in opposite directions, so averaging them can hide the effect. Sessions recorded before 25 October lack these columns. `tools/train_model.py` recomputes everything from the raw files anyway.
 
 **Heart and motion**
 
@@ -89,9 +90,10 @@ Compare each channel with itself: channels can react in opposite directions, so 
 
 | Column | Meaning |
 |---|---|
-| stress, stress_body | the app's own scores (with EEG / heart + face). These come from the app, not ground truth: **do not train on them**. |
+| stress, stress_body, stress_ml | the app's own scores (with EEG / heart + face / trained model). These come from the app, not ground truth: **do not train on them**. |
 
 ## Recommended use
+A ready-made baseline is `tools/train_model.py` in the project repository (method in `methods.md`, "Learned model").
 - **Target:** `label`, using only rows where it is not empty.
 - **Validation:** keep participants apart (**leave-one-participant-out**). Windows from the same session are strongly correlated, so a random split gives inflated scores.
 - **Per-person normalisation:** subtract each session's baseline (label 0) mean. Physiology varies a lot between people.

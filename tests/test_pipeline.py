@@ -8,9 +8,11 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from scipy import signal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from clutch.engine import Config, Engine  # noqa: E402
+from clutch.engine import Config, Engine, StressModel  # noqa: E402
+from clutch.learned import LiveScorer  # noqa: E402
 from clutch.processing import eeg_features, heart_rate  # noqa: E402
 from clutch.sources import MockSource  # noqa: E402
 
@@ -42,13 +44,13 @@ def fake_face(stress, rng):
             "blink_rate": 15 + n(3), "head_motion": 0.01 + 0.02 * stress + n(0.004)}
 
 
-def simulate(phases, with_face=False):
+def simulate(phases, with_face=False, learned=None):
     src = MockSource(seed=3)
     src.start()
     src._advance = lambda: None  # data only from src.step(): deterministic, independent of the PC's speed
     rng = np.random.default_rng(5)
     with tempfile.TemporaryDirectory() as tmp:
-        eng = Engine(src, Config(), Path(tmp))
+        eng = Engine(src, Config(), Path(tmp), learned)
         out = {}
         for phase, seconds in phases:
             eng.set_phase(phase)
@@ -114,7 +116,45 @@ def test_headset_free_score_from_face_and_heart():
     assert b1 > 60 and bs < 25
 
 
+def test_muscle_tension_is_flagged_and_excluded():
+    fs, t = 256, np.arange(256 * 4) / 256
+    rng = np.random.default_rng(2)
+    brain = 10 * np.sin(2 * np.pi * 10 * t) + rng.normal(0, 3, t.size)
+    b, a = signal.butter(4, [30, 44], btype="bandpass", fs=fs)
+    emg = signal.filtfilt(b, a, rng.normal(0, 40, t.size))  # forehead muscle: broadband power above 30 Hz
+    names = ["TP9", "AF7", "AF8", "TP10"]
+    chans = eeg_features(np.vstack([brain, brain + emg, brain, brain]), fs, names)["channels"]
+    assert chans["AF7"]["muscle"] and "muscle" in chans["AF7"]["why"], chans["AF7"]
+    assert not any(chans[n]["muscle"] for n in ("TP9", "AF8", "TP10"))
+
+    model = StressModel(Config())
+    for _ in range(40):  # AF7 tense for the whole calibration: rejected every time
+        model.collect("calib_rest", {"alpha_AF7": None, "hr": 60 + rng.normal(0, 1)}, {"alpha_AF7": "muscle"})
+        model.collect("calib_stress", {"alpha_AF7": None, "hr": 70 + rng.normal(0, 1)}, {"alpha_AF7": "muscle"})
+    cal = model.finalize()
+    af7 = cal["signals"]["alpha_AF7"]
+    assert "alpha_AF7" not in cal["used"] and af7["dropped"] == {"muscle": 100} and "muscle" in af7["note"], af7
+
+
+def test_trained_model_scores_live():
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    rng = np.random.default_rng(0)
+    # features are changes from the person's rest baseline: heart rate up ~10 bpm under stress
+    X = np.r_[rng.normal(0, 2, 200), rng.normal(10, 2, 200)].reshape(-1, 1)
+    y = np.r_[np.zeros(200), np.ones(200)]
+    bundle = {"model": HistGradientBoostingClassifier(max_iter=50).fit(X, y), "features": ["hr"],
+              "name": "headset_free", "trained_on": ["synthetic"], "cv_auc": 1.0}
+    out, _ = simulate([("calib_rest", 60), ("calib_stress", 60), ("calibration_check", 1),
+                       ("round1", 60), ("reset", 60)], learned=LiveScorer(bundle))
+    assert all(m["stress_ml"] is None for m in out["calib_rest"][:80])  # no baseline yet
+    late = lambda ph: float(np.mean([m["stress_ml"] for m in out[ph][-40:] if m["stress_ml"] is not None]))
+    print(f"trained model: round1={late('round1'):.0f} reset={late('reset'):.0f}")
+    assert late("round1") > 60 and late("reset") < 40
+
+
 if __name__ == "__main__":
+    test_muscle_tension_is_flagged_and_excluded()
+    test_trained_model_scores_live()
     test_headset_free_score_from_face_and_heart()
     test_rest_only_calibration_is_flagged_low_confidence()
     test_alpha_feature_tracks_relaxation()

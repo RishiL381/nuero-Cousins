@@ -40,8 +40,10 @@ function brainCard(sig, cal) {
   const rows = EEG_KEYS.filter((k) => sig[k]).map((k) => {
     const s = sig[k], used = cal && cal.used.includes(k), ch = k.slice(6);
     const change = s.rest != null && s.stress != null ? Math.round((Math.pow(10, s.stress - s.rest) - 1) * 100) : null;
+    const muscle = (s.dropped || {}).muscle || 0;
     return `<tr><td>${ch}</td><td>${change == null ? "—" : (change > 0 ? "+" : "") + change + "%"}</td>
-      <td>${s.effect != null ? s.effect.toFixed(2) : "—"}</td><td class="${used ? "better" : "worse"}">${used ? "✓" : "✗"}</td></tr>`;
+      <td>${s.effect != null ? s.effect.toFixed(2) : "—"}</td><td class="${used ? "better" : "worse"}">${used ? "✓" : "✗"}</td>
+      <td class="muted" title="Share of windows thrown out because of forehead or jaw muscle tension">${muscle ? `${muscle}% muscle` : ""}</td></tr>`;
   }).join("");
   const color = (k) => {
     const s = sig[k];
@@ -237,6 +239,14 @@ function updateLive(m, hr) {
     const b = m.stress_body == null ? null : Math.round(m.stress_body);
     el.textContent = b ?? "—"; el.style.color = stressColor(b);
   });
+  const ml = $("ml-score");
+  ml.hidden = !m.learned;
+  if (m.learned) {
+    ml.title = `Gradient-boosted trees trained on ${m.learned.trained_on.length} session(s), validation AUC ${m.learned.cv_auc}. Starts after the first 45 s of a calibration.`;
+    const v = m.stress_ml == null ? null : Math.round(m.stress_ml);
+    const el = ml.querySelector("b");
+    el.textContent = v ?? "—"; el.style.color = stressColor(v);
+  }
 
   $("calib-note").hidden = !!m.calibrated;
   const err = $("engine-error");

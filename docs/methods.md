@@ -83,8 +83,13 @@ Two presets are available: **Standard** (recommended) and **Short** (for live de
 - **Why per channel:** in our first real session (P01), the median over the four channels showed no change because channels moved in opposite directions. The right forehead channel (AF8) showed a large alpha decrease (d = 1.14), the channels behind the ears an increase. Contact also differed between phases, so a median mixed different channels across conditions.
 - **Why absolute log power rather than relative power:** blinks put most of their energy below 4 Hz but spill into theta. On simulated data with blinks on the forehead channels, relative alpha lost those channels (d ≈ 0), while log absolute alpha kept them (d ≈ 1.8–2.3). Absolute power is only compared within one channel and one session, so electrode impedance differences between people do not matter.
 - **Limitation:** Klimesch (1999) recommends adjusting bands to each person's individual alpha frequency. Clutch uses fixed bands for now.
+- **Muscle rejection:** forehead and jaw muscle activity (EMG) adds broadband power from about 20 Hz upwards. It is largest at peripheral sites such as the Muse forehead and ear channels, and is detectable above 12 Hz even with weak contractions (Goncharova et al., 2003). A channel window whose relative 30–44 Hz power exceeds **0.10** is treated as muscle-contaminated and left out, for that channel only, as with bad contact or head motion. The interface then asks the user to relax forehead and jaw, and the calibration report gives the share of windows rejected per sensor.
+  - **Why:** in P01, beta correlated with 30–44 Hz power on every channel (r = 0.74–0.87), so the beta changes reflected muscle tension rather than the brain. The left forehead channel (AF7) had 30–44 Hz power around 0.13 during the baseline, against about 0.01 on the clean ear channels.
+  - **Effect on P01:** with the rule, AF8's alpha response grows from d = 0.70 to 0.84, and AF7's spurious opposite response shrinks from d = −0.59 to −0.28.
+  - **Limitation:** the 0.10 threshold was set on one session. EMG spectra vary between people (Goncharova et al., 2003), so it should be checked on more participants.
 ### Heart rate
 - **Source:** the Muse optical (PPG) sensor, 10-second windows, beat detection cross-checked against the spectral peak.
+- **Quality:** the share of beat-to-beat intervals within 15% of their median. A single missed beat no longer fails the whole window. On P01, this raised the share of usable windows from 16% to 40% at rest and from 5% to 18% under stress, with consistent values (median 54 bpm at rest and 59 bpm under stress, matching the spectral estimate). The forehead PPG remains noisy, and a watch should do better.
 - **Why:** heart rate rises reliably in the TSST (Kirschbaum et al., 1993), and cardiac measures are standard stress readouts (Allen et al., 2014; Giannakakis et al., 2019).
 - **Methodological guidance:** heart rate variability (HRV) is a stronger marker but needs cleaner recordings; we follow the recommendations of Laborde et al. (2017) for any future HRV work.
 
@@ -109,6 +114,31 @@ For each signal (each EEG channel, heart rate, each face indicator) we compute *
 ### Intervention used in sessions
 The breathing reset paces breathing at 6 breaths per minute. The mechanisms of slow-paced breathing and HRV biofeedback are reviewed by Lehrer & Gevirtz (2014).
 
+### Learned model (towards no headset)
+`tools/train_model.py` trains gradient-boosted decision trees (scikit-learn `HistGradientBoostingClassifier`, which handles missing values natively) to predict rest (0) or stress (1) every second.
+- **Features** (`clutch/learned.py`, shared with the live app): log theta, alpha and beta power per EEG channel (clean windows only), heart rate, and the seven face indicators.
+- **Personal reference:** each feature is taken relative to the median of the first 45 s of the person's rest phase. Those seconds are then excluded from training and testing. The features are averaged over the last 10 s.
+- **Feature sets compared:** full (EEG + heart + face), headset-free (heart + face), and each modality alone.
+- **Validation:**
+  - with two or more participants: leave-one-participant-out;
+  - with one participant: 5 contiguous time blocks per phase, with 15 s removed around each test block.
+  - Random splits are not used: neighbouring seconds share overlapping windows and would inflate the score.
+- **Live use:** with `--save models`, the headset-free model is saved and loaded by the app at start-up. It scores from the 46th second of a calibration onwards, next to the rule-based scores.
+
+**First result (P01 only, one session, time-block validation, AUC):**
+
+| Set | AUC |
+|---|---|
+| full | 0.77 |
+| headset-free | 0.81 |
+| EEG | 0.75 |
+| face | 0.78 |
+| heart | 0.93 |
+
+- **Interpretation:** with 250 seconds from one person, the trees overfit. The face features driving the model are head motion and smile, which may reflect the task (looking at the keyboard) rather than stress.
+- **Heart rate alone separates best.**
+- **Validity:** these numbers only become meaningful with leave-one-participant-out on several people.
+
 ---
 
 ## 4. Limitations
@@ -132,6 +162,7 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
 - Dedovic, K., et al. (2005). The Montreal Imaging Stress Task: Using functional imaging to investigate the effects of perceiving and processing psychosocial stress in the human brain. *Journal of Psychiatry & Neuroscience, 30*(5), 319–325. https://www.jpn.ca/content/30/5/319
 - Dickerson, S. S., & Kemeny, M. E. (2004). Acute stressors and cortisol responses: A theoretical integration and synthesis of laboratory research. *Psychological Bulletin, 130*(3), 355–391. https://doi.org/10.1037/0033-2909.130.3.355
 - Giannakakis, G., Grigoriadis, D., Giannakaki, K., Simantiraki, O., Roniotis, A., & Tsiknakis, M. (2019). Review on psychological stress detection using biosignals. *IEEE Transactions on Affective Computing* (published 2022, 13(1), 440–460). https://doi.org/10.1109/TAFFC.2019.2927337
+- Goncharova, I. I., McFarland, D. J., Vaughan, T. M., & Wolpaw, J. R. (2003). EMG contamination of EEG: Spectral and topographical characteristics. *Clinical Neurophysiology, 114*(9), 1580–1593. https://doi.org/10.1016/S1388-2457(03)00093-2
 - Jennings, J. R., Kamarck, T., Stewart, C., Eddy, M., & Johnson, P. (1992). Alternate cardiovascular baseline assessment techniques: Vanilla or resting baseline. *Psychophysiology, 29*(6), 742–750. https://doi.org/10.1111/j.1469-8986.1992.tb02052.x
 - Katmah, R., Al-Shargie, F., Tariq, U., Babiloni, F., Al-Mughairbi, F., & Al-Nashash, H. (2021). A review on mental stress assessment methods using EEG signals. *Sensors, 21*(15). https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8347831/
 - Kirschbaum, C., Pirke, K. M., & Hellhammer, D. H. (1993). The 'Trier Social Stress Test': A tool for investigating psychobiological stress responses in a laboratory setting. *Neuropsychobiology, 28*(1–2), 76–81.

@@ -33,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .learned import LiveScorer, row_features
 from .processing import eeg_features, heart_rate, motion_level
 
 CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose data are collected
@@ -87,18 +88,27 @@ class StressModel:
     calibration: dict | None = None
     _samples: dict = field(default_factory=_empty_samples)
     _smoothed: dict = field(default_factory=dict)
+    _dropped: dict = field(default_factory=dict)  # signal -> {reason: windows rejected during calibration}
 
     @property
     def baseline(self):  # kept for callers that only need to know whether we are calibrated
         return self.calibration
 
-    def collect(self, phase, values: dict):
-        """values: signal name -> current value (None or missing = not available this tick)."""
+    def collect(self, phase, values: dict, dropped: dict | None = None):
+        """values: signal name -> current value (None or missing = not available this tick).
+        dropped: signal name -> why its value was rejected this tick ("contact", "motion", "muscle")."""
         if phase not in self._samples:
             return
         for name, x in values.items():
             if name in SIGNALS and x is not None:
                 self._samples[phase][name].append(float(x))
+        for name in values:
+            if name in SIGNALS:
+                counts = self._dropped.setdefault(name, {})
+                counts["ticks"] = counts.get("ticks", 0) + 1
+        for name, why in (dropped or {}).items():
+            counts = self._dropped.setdefault(name, {})
+            counts[why] = counts.get(why, 0) + 1
 
     def finalize(self) -> dict:
         rest, stress = self._samples["calib_rest"], self._samples["calib_stress"]
@@ -107,6 +117,10 @@ class StressModel:
             r, s = rest[name], stress[name]
             floor = MIN_SD.get(name, MIN_SD_FACE)
             info = {"n_rest": len(r), "n_stress": len(s), "used": False}
+            counts = dict(self._dropped.get(name, {}))
+            ticks = counts.pop("ticks", 0)
+            if counts and ticks:  # % of calibration windows rejected, by reason
+                info["dropped"] = {why: round(100 * n / ticks) for why, n in counts.items()}
             if len(r) >= 10:
                 info["rest"] = float(np.median(r))
                 info["rest_sd"] = max(float(np.std(r)), floor)
@@ -128,8 +142,11 @@ class StressModel:
                 if len(rec) >= 10 and info["stress"] != info["rest"]:  # how far back toward calm afterwards
                     pos = (float(np.median(rec)) - info["rest"]) / (info["stress"] - info["rest"])
                     info["recovered_pct"] = round(100 * (1 - pos), 0)
-            elif len(r) or len(s):
-                info["note"] = "not enough clean signal"
+            elif len(r) or len(s) or "dropped" in info:
+                worst = max(info.get("dropped", {"": 0}).items(), key=lambda kv: kv[1])[0]
+                info["note"] = {"muscle": "not enough clean signal: muscle tension (forehead, jaw)",
+                                "contact": "not enough clean signal: poor contact",
+                                "motion": "not enough clean signal: head movement"}.get(worst, "not enough clean signal")
             else:
                 info["note"] = "not recorded"
             signals[name] = info
@@ -147,8 +164,8 @@ class StressModel:
         cal = {"ok": mode is not None, "mode": mode, "confidence": confidence, "used": used,
                "used_without_headset": [k for k in used if k not in HEADSET_SIGNALS],
                "signals": {k: {kk: (round(vv, 3) if isinstance(vv, float) else vv) for kk, vv in v.items()}
-                           for k, v in signals.items() if v["n_rest"] or v["n_stress"]}}
-        self._samples = _empty_samples()
+                           for k, v in signals.items() if v["n_rest"] or v["n_stress"] or "dropped" in v}}
+        self._samples, self._dropped = _empty_samples(), {}
         if cal["ok"]:
             self.calibration = cal
             self._signals = signals
@@ -221,9 +238,9 @@ class SessionLogger:
     """
     FACE_COLS = ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"]
     CHANNELS = ("TP9", "AF7", "AF8", "TP10")
-    CHANNEL_COLS = ([f"{b}_{ch}" for ch in CHANNELS for b in ("alpha", "beta", "theta", "alphashare", "alphalog")]
-                    + [f"q_{ch}" for ch in CHANNELS])
-    METRIC_COLS = (["t", "phase", "stress", "stress_body", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
+    CHANNEL_COLS = ([f"{b}_{ch}" for ch in CHANNELS for b in ("alpha", "beta", "theta", "gamma", "alphashare", "alphalog")]
+                    + [f"q_{ch}" for ch in CHANNELS] + [f"muscle_{ch}" for ch in CHANNELS])
+    METRIC_COLS = (["t", "phase", "stress", "stress_body", "stress_ml", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
                     "hr_bpm", "hr_quality", "motion", "usable_channels", "contact"] + FACE_COLS + CHANNEL_COLS)
 
     def __init__(self, root: Path):
@@ -266,7 +283,7 @@ class SessionLogger:
             contact = "".join(c["q"][0] for c in eeg.get("channels", {}).values())  # e.g. "ggfb"
             face = m.get("face") or {}
             self._writers["metrics.csv"].writerow(
-                [m["t"], m["phase"], m["stress"], m.get("stress_body"), m["z"].get("eeg"), m["z"].get("hr"),
+                [m["t"], m["phase"], m["stress"], m.get("stress_body"), m.get("stress_ml"), m["z"].get("eeg"), m["z"].get("hr"),
                  eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
                  hr.get("bpm"), hr.get("quality"), m["motion"].get("level"),
                  eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS]
@@ -319,8 +336,9 @@ class SessionLogger:
 
 
 class Engine:
-    def __init__(self, source, cfg: Config, sessions_dir: Path):
+    def __init__(self, source, cfg: Config, sessions_dir: Path, learned: LiveScorer | None = None):
         self.source = source
+        self.learned = learned
         self.cfg = cfg
         self.model = StressModel(cfg)
         self.logger = SessionLogger(sessions_dir)
@@ -402,18 +420,28 @@ class Engine:
             if motion["flag"]:
                 ratio = None  # head movement corrupts EEG; skip this window
             face = self._face if (self._face and time.time() - self._face_t < cfg.face_max_age_s) else None
-            # one value per EEG channel: relative alpha, only when that channel has acceptable contact
-            alphas = {f"alpha_{n}": (ch["alphalog"] if ch["q"] != "bad" and not motion["flag"] else None)
-                      for n, ch in feats.get("channels", {}).items()}
+            # one value per EEG channel: log alpha, dropped for bad contact, head motion or muscle tension
+            alphas, dropped = {}, {}
+            for n, ch in feats.get("channels", {}).items():
+                why = ("contact" if ch["q"] == "bad" else "motion" if motion["flag"]
+                       else "muscle" if ch.get("muscle") else None)
+                alphas[f"alpha_{n}"] = None if why else ch["alphalog"]
+                if why:
+                    dropped[f"alpha_{n}"] = why
             values = {**alphas, "hr": hr["bpm"] if hr["quality"] >= cfg.min_hr_quality else None, **(face or {})}
-            self.model.collect(self.phase, values)
+            self.model.collect(self.phase, values, dropped)
             full, body, z = self.model.score(values, cfg.tick_s)
             # Main score: with EEG when the headset streams, otherwise the headset-free score.
             stress = full if eeg is not None else body
+            # Trained model (tools/train_model.py), heart + face only, when one is installed
+            ml = (self.learned.update(cfg.tick_s, self.phase, row_features(feats, hr, motion, face, cfg.min_hr_quality))
+                  if self.learned else None)
             self.seq += 1
             m = {
                 "type": "metrics", "seq": self.seq, "t": self.now(), "phase": self.phase,
-                "stress": stress, "stress_body": body, "calibrated": self.model.calibration is not None,
+                "stress": stress, "stress_body": body, "stress_ml": ml,
+                "learned": self.learned.info if self.learned else None,
+                "calibrated": self.model.calibration is not None,
                 "z": z, "used": sorted(z), "eeg": feats, "hr": hr, "motion": motion, "face": face,
                 "source": src.status(),
             }

@@ -187,6 +187,16 @@ Then open http://localhost:8000.
 - **Presentation mode** for the jury (P key or the "Present" button): two big scores, the sea, the comparison chart.
 - **Deterministic tests:** the simulator no longer depends on the PC's speed during tests.
 
+### Done in the afternoon of day 2
+- **Why beta was wrong in P01:** beta followed muscle activity (30–44 Hz) on every channel (r = 0.74–0.87). The left forehead sensor picked up muscle tension during the baseline.
+- **Automatic muscle rejection:** a window is dropped for one sensor when its 30–44 Hz share is above 0.10. The live view says "relax forehead and jaw", and the profile shows the share of windows rejected per sensor. Effect on P01: AF8 goes from d = 0.70 to 0.84.
+- **More robust heart rate:** one missed beat no longer rejects the window, so 2–3× more usable windows on P01.
+- **Trained model:** `tools/train_model.py`, gradient-boosted trees on EEG + heart + face. It compares the full set with the headset-free set and validates without leaks.
+  - On P01 alone: heart AUC 0.93, headset-free 0.81, full 0.77. The trees overfit 250 seconds of one person.
+  - The headset-free model runs live in the app ("Trained model" line) when `models/headset_free.joblib` exists.
+  - Retrain after recording the team:
+    `.venv\Scripts\python tools\export_dataset.py`, then `.venv\Scripts\python tools\train_model.py --data dataset_export --save models`.
+
 ### Next steps (day 2)
 1. **Check on the real headset** that the per-sensor profile and the head map behave as on the simulator.
 2. **Record the team:** about 4 people × 2 calibrations, Standard protocol, camera on, consent ticked, codes P2, P3… Then export and send.
