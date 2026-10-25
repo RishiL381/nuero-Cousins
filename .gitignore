@@ -1,8 +1,17 @@
 .venv/
 __pycache__/
-sessions/
+/sessions/
 analysis/results.csv
 dataset_export/
 clutch_dataset_*.zip
 dataset_export_mapping.json
 models/
+# ML pipeline: raw public datasets and generated files stay local (see ml/README.md)
+data/epistress/
+data/kaggle-*/
+data/mendeley-*/
+data/arsalan-*/
+data/*_windows.csv
+ml/models/
+ml/results_*.md
+*.part

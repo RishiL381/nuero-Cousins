@@ -1,0 +1,19 @@
+{
+  "kind": "calibration",
+  "consent": true,
+  "protocol": "standard",
+  "stressor": "math",
+  "protocol_seconds": {
+    "rest": 180,
+    "stress": 120,
+    "recovery": 120
+  },
+  "camera": true,
+  "headset_streaming": true,
+  "device": {
+    "name": "Muse-3724",
+    "address": "00:55:DA:B6:37:24"
+  },
+  "started_at": "2026-10-24T23:27:29.857Z",
+  "participant": "P01"
+}

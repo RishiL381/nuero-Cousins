@@ -1,0 +1,7 @@
+t_start,t_end,phase,label
+257.65,437.66,calib_rest,0
+437.66,448.76,calib_survey,
+448.76,568.78,calib_stress,1
+568.78,579.8,calib_survey,
+579.8,699.83,calib_recovery,
+699.83,1042.3,calibration_check,

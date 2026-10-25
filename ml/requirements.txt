@@ -1,0 +1,6 @@
+# Stress model pipeline (on top of the app's requirements.txt)
+pandas
+scikit-learn
+lightgbm
+joblib
+remotezip   # only for ml/download_epistress.py

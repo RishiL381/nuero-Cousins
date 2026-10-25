@@ -308,7 +308,9 @@ class MockSource:
 
     kind = "mock"
     PHASE_STRESS = {"idle": 0.3, "calib_rest": 0.25, "calib_stress": 0.85, "calib_recovery": 0.4, "warmup": 0.4, "round1": 0.75,
-                    "reset": 0.2, "round2": 0.5, "results": 0.3}
+                    "reset": 0.2, "round2": 0.5, "results": 0.3,
+                    "study_relax": 0.2, "study_math_easy": 0.45, "study_math_hard": 0.8, "study_stroop_hard": 0.8,
+                    "study_rating": 0.4}
 
     def __init__(self, seed: int = 0):
         self.eeg_fs, self.ppg_fs, self.accel_fs = 256, 64, 52
