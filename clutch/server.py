@@ -83,7 +83,7 @@ def create_app(engine: Engine) -> FastAPI:
                     engine.logger.event(engine.now(), engine.phase, msg.get("name", "event"), msg.get("data", {}))
                 elif kind == "session_end":
                     engine.logger.finish(msg.get("summary", {}))
-                elif kind == "face":
+                elif kind == "face_features":  # home-page face sensor -> stress model
                     engine.set_face(msg.get("features") or {})
                 elif kind == "headset_connect" and hasattr(src, "headset"):
                     src.headset.connect(msg.get("name"))

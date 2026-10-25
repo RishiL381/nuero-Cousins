@@ -1128,7 +1128,7 @@ state.scenes.preview = new BoatScene($("sea-preview"));
 state.scenes.preview.start();
 
 $("btn-start").onclick = () => runSession();
-// Face camera (MediaPipe runs in face.js; only the numbers are sent to the server)
+// Face camera (MediaPipe runs in face-sensor.js; only the numbers are sent to the server)
 function renderFaceBars(f) {
   $("face-bars").innerHTML = FACE_KEYS.map((k) => {
     const v = f ? f[k] : null;
@@ -1150,7 +1150,7 @@ $("cam-toggle").onclick = async () => {
   $("cam-toggle").disabled = true;
   try {
     await ClutchFace.start($("cam-video"), $("cam-overlay"),
-      (f) => { if (f) send({ type: "face", features: f }); renderFaceBars(f); },
+      (f) => { if (f) send({ type: "face_features", features: f }); renderFaceBars(f); },
       (s) => { $("cam-status").textContent = s; });
     $("cam-off").hidden = true; $("cam-toggle").textContent = "Stop camera";
   } catch (e) {
