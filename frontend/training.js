@@ -10,16 +10,19 @@
   const SERIES = {
     label: { name: "Label model", key: "label:headset_free", color: "var(--series-a)", dash: "" },
     teacher: { name: "Brain-taught model", key: "teacher:headset_free", color: "var(--series-b)", dash: "6 4" },
-    headset: { name: "With headset (brain)", key: "label:eeg", color: "var(--series-c)", dash: "2 3" },
+    headset: { name: "With headset (brain)", key: "label:brain", color: "var(--series-c)", dash: "2 3" },
   };
   const MODEL_ROWS = [
     ["label:headset_free", "Heart + face · label model", "var(--series-a)"],
     ["teacher:headset_free", "Heart + face · taught by brain", "var(--series-b)"],
     ["label:heart", "Heart only", "var(--series-other)"],
     ["label:face", "Face only", "var(--series-other)"],
-    ["label:eeg", "EEG only (headset)", "var(--series-other)"],
+    ["label:brain", "Brain only (headset)", "var(--series-other)"],
+    ["label:muscle", "Muscle only (headset)", "var(--series-other)"],
+    ["label:headset", "Brain + muscle (headset)", "var(--series-other)"],
     ["label:full", "All signals (headset)", "var(--series-other)"],
   ];
+  const HEADSET_SETS = { brain: "brain only", headset: "brain + muscle", full: "brain + muscle + heart + face", eeg: "EEG" };
   const phaseNames = typeof PHASE_NAMES !== "undefined" ? PHASE_NAMES : {};  // from app.js
   let data = null, timer = null, wasRunning = false;
 
@@ -94,15 +97,16 @@
     const rep = data.report;
     el("tr-model").textContent = rep
       ? `Trained ${rep.trained_at || ""} on ${rep.sessions.length} session${rep.sessions.length > 1 ? "s" : ""}. ` +
-        `Live with the headset: ${rep.with_headset === "full" ? "brain + heart + face" : "brain"} model ` +
-        `(AUC ${fmtAuc((rep.results[`label:${rep.with_headset || "eeg"}`] || {}).auc)}); without: ` +
-        `${rep.live_model === "teacher" ? "brain-taught" : "label"} model (AUC ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)}).`
+        `Live with the headset: ${HEADSET_SETS[rep.with_headset] || "brain"} model ` +
+        `(AUC ${fmtAuc((rep.results[`label:${rep.with_headset || "brain"}`] || {}).auc)}); without: ` +
+        `${rep.live_model === "teacher" ? "brain-taught" : "label"} model (AUC ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)}).` +
+        (rep.iaf ? ` Your alpha frequency: ${Object.values(rep.iaf).map((v) => v.toFixed(1)).join(", ")} Hz.` : "")
       : "No model trained yet.";
 
     const done = !!rep;
     el("sn-4").classList.toggle("done", done);
     el("ss-4").className = "step-state" + (done ? " ok" : "");
-    el("ss-4").textContent = done ? `✓ Models trained · AUC on unseen data: ${fmtAuc((rep.results[`label:${rep.with_headset || "eeg"}`] || {}).auc)} ` +
+    el("ss-4").textContent = done ? `✓ Models trained · AUC on unseen data: ${fmtAuc((rep.results[`label:${rep.with_headset || "brain"}`] || {}).auc)} ` +
         `with headset, ${fmtAuc(rep.results[SERIES[rep.live_model].key].auc)} without`
       : ds ? "Dataset ready: train the model"
       : ok.length ? `${ok.length} session${ok.length > 1 ? "s" : ""} ready: build the dataset`
@@ -120,7 +124,7 @@
   }
 
   function renderResults(rep) {
-    SERIES.headset.key = `label:${rep.with_headset || "eeg"}`;
+    SERIES.headset.key = `label:${rep.with_headset || "brain"}`;
     const live = rep.live_model;
     const res = (k) => rep.results[SERIES[k].key] || {};
     const secs = rep.seconds || {};
@@ -128,7 +132,7 @@
       <div class="v">${v}</div><div class="s">${s}</div></div>`;
     el("tr-kpis").innerHTML =
       kpi("With headset · live", fmtAuc(res("headset").auc),
-        `${rep.with_headset === "full" ? "brain + heart + face" : "brain (EEG) only"}, AUC on unseen data`, SERIES.headset.color) +
+        `${HEADSET_SETS[rep.with_headset] || "brain"}, AUC on unseen data`, SERIES.headset.color) +
       kpi("Without headset · live", fmtAuc(res(live).auc),
         `heart + face, ${live === "teacher" ? "taught by the brain" : "label model"}, AUC on unseen data`, SERIES[live].color) +
       kpi("Brain → body", res("teacher").imitation_r == null ? "—" : `r ${res("teacher").imitation_r.toFixed(2)}`,
@@ -290,7 +294,7 @@
     const hist = data.history || [], box = el("ch-history");
     if (!hist.length) { box.innerHTML = ""; return; }
     const W = width("ch-history"), H = 190, l = 64, r = W - 110, t = 10, b = H - 26;
-    const get = (h, k) => (h.auc || {})[k === "headset" ? `label:${h.with_headset || "eeg"}` : SERIES[k].key];
+    const get = (h, k) => (h.auc || {})[k === "headset" ? `label:${h.with_headset || "brain"}` : SERIES[k].key];
     const vals = hist.flatMap((h) => [get(h, "headset"), get(h, "label"), get(h, "teacher")]).filter((v) => v != null);
     const lo = Math.min(0.4, Math.floor((Math.min(...vals, 1) - 0.05) * 10) / 10);
     const n = hist.length, x = (i) => (n === 1 ? (l + r) / 2 : l + (r - l) * i / (n - 1));

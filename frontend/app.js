@@ -226,7 +226,12 @@ function updateLive(m, hr) {
   document.querySelectorAll('[data-live="stress"]').forEach((el) => { el.textContent = s ?? "—"; el.style.color = stressColor(s); });
   $("pill-dot").style.background = stressColor(s);
   updateGauges(s);
-  document.querySelectorAll('[data-live="hr"]').forEach((el) => { el.textContent = hr != null ? `${Math.round(hr)} bpm` : "— bpm"; });
+  const fromWatch = m.hr && m.hr.source === "watch";
+  document.querySelectorAll('[data-live="hr"]').forEach((el) => {
+    el.textContent = hr != null ? `${fromWatch ? "⌚ " : ""}${Math.round(hr)} bpm` : "— bpm";
+    el.title = fromWatch ? "Heart rate from your watch" : "Heart rate from the headset's forehead sensor";
+  });
+  $("score-source").textContent = m.stress_source ? `Score from: ${m.stress_source}` : "";
   document.querySelectorAll('[data-live="hr-big"]').forEach((el) => { el.textContent = hr != null ? Math.round(hr) : "—"; });
   document.querySelectorAll('[data-live="motion"]').forEach((el) => {
     el.textContent = m.motion.level == null ? "—" : m.motion.flag ? "Moving (signal paused)" : "Still";

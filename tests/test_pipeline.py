@@ -116,6 +116,17 @@ def test_headset_free_score_from_face_and_heart():
     assert b1 > 60 and bs < 25
 
 
+def test_individual_alpha_frequency():
+    from clutch.processing import individual_alpha_frequency, iaf_bands
+    freqs = np.arange(1, 45.5, 0.5)
+    rng = np.random.default_rng(4)
+    spectra = [10 / freqs * (1 + 1.5 * np.exp(-((freqs - 11.5) ** 2) / 0.8)) * rng.uniform(0.9, 1.1, freqs.size)
+               for _ in range(20)]                                       # 1/f background + alpha peak at 11.5 Hz
+    assert individual_alpha_frequency(spectra, freqs) == 11.5
+    assert individual_alpha_frequency([10 / freqs] * 20, freqs) is None  # no peak: no IAF
+    assert iaf_bands(12.0)["alpha"] == (8.0, 14.0)                        # Klimesch: IAF-4 to IAF+2
+
+
 def test_muscle_tension_is_flagged_and_excluded():
     fs, t = 256, np.arange(256 * 4) / 256
     rng = np.random.default_rng(2)
@@ -162,6 +173,7 @@ def test_trained_model_scores_live():
 
 
 if __name__ == "__main__":
+    test_individual_alpha_frequency()
     test_muscle_tension_is_flagged_and_excluded()
     test_trained_model_scores_live()
     test_headset_free_score_from_face_and_heart()

@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .learned import LiveScorer, row_features
+from .learned import LiveScorer, row_inputs
 from .processing import eeg_features, heart_rate, motion_level
 from .watch import WatchHR
 
@@ -481,10 +481,12 @@ class Engine:
         ppg = src.get_ppg(src.ppg_fs * cfg.ppg_window_s) if src.ppg_fs else None
         acc = src.get_accel(src.accel_fs * cfg.motion_window_s) if src.accel_fs else None
 
+        psd = None
         if eeg is None or eeg.shape[1] < src.eeg_fs * 2:
             feats = {"channels": {}, "usable": 0, "ratio_log": None, "warming_up": True}
         else:
             feats = eeg_features(eeg, src.eeg_fs, src.eeg_names, cfg.notch_hz)
+        psd = feats.pop("psd", None)  # spectra for the trained models; too big for the WebSocket and the logs
         hr = heart_rate(ppg, src.ppg_fs) if ppg is not None else {"bpm": None, "quality": 0.0}
         hr["source"] = "muse" if hr.get("bpm") is not None else None
         watch_bpm = self.watch.latest()
@@ -510,16 +512,23 @@ class Engine:
                       "hrv": hr.get("rmssd"), **(face or {})}
             self.model.collect(self.phase, values, dropped)
             full, body, z = self.model.score(values, cfg.tick_s)
-            # Main score: with EEG when the headset streams, otherwise the headset-free score.
-            stress = full if eeg is not None else body
             # Trained models (tools/train_model.py), when installed: heart + face, and with the headset (brain)
-            row = row_features(feats, hr, motion, face, cfg.min_hr_quality)
-            ml = self.learned.update(cfg.tick_s, self.phase, row) if self.learned else None
-            ml_headset = self.learned_headset.update(cfg.tick_s, self.phase, row) if self.learned_headset else None
+            inputs = row_inputs({**feats, "psd": psd}, hr, motion, face, cfg.min_hr_quality)
+            ml = self.learned.update(cfg.tick_s, self.phase, inputs) if self.learned else None
+            ml_headset = self.learned_headset.update(cfg.tick_s, self.phase, inputs) if self.learned_headset else None
+            # Main score: the trained brain model while the headset streams, else the calibration rule with the
+            # EEG; without the headset, the trained heart + face model, else the calibration rule on heart + face.
+            headset_on = eeg is not None and feats.get("usable", 0) > 0
+            stress, source = next(((v, name) for v, name in (
+                (ml_headset if headset_on else None, "trained brain model"),
+                (full if headset_on else None, "calibration (brain + heart + face)"),
+                (ml, "trained heart + face model"),
+                (body, "calibration (heart + face)")) if v is not None), (None, None))
             self.seq += 1
             m = {
                 "type": "metrics", "seq": self.seq, "t": self.now(), "phase": self.phase,
-                "stress": stress, "stress_body": body, "stress_ml": ml, "stress_ml_headset": ml_headset,
+                "stress": stress, "stress_source": source, "stress_body": body, "stress_ml": ml,
+                "stress_ml_headset": ml_headset,
                 "learned": self.learned.info if self.learned else None,
                 "learned_headset": self.learned_headset.info if self.learned_headset else None,
                 "calibrated": self.model.calibration is not None,
