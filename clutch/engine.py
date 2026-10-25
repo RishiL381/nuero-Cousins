@@ -207,6 +207,7 @@ class SessionLogger:
         self._files = {}
         self._writers = {}
         self._lock = threading.Lock()  # raw samples arrive from the source thread
+        self._flushed = 0.0
 
     @property
     def active(self):
@@ -244,6 +245,10 @@ class SessionLogger:
                  eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
                  hr.get("bpm"), hr.get("quality"), m["motion"].get("level"),
                  eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS])
+            if time.time() - self._flushed > 2:  # keep the files on disk up to date
+                for fh in self._files.values():
+                    fh.flush()
+                self._flushed = time.time()
 
     def event(self, t, phase, name, data):
         with self._lock:

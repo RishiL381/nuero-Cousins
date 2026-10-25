@@ -791,7 +791,8 @@ function renderCalibrationReport(cal, extra) {
       change = key === "eeg"
         ? `Alpha/beta ratio ${s.stress < s.rest ? "dropped" : "rose"} ${Math.abs(Math.round((Math.pow(10, s.stress - s.rest) - 1) * 100))}% under stress`
         : `${s.stress > s.rest ? "+" : ""}${Math.round(s.stress) - Math.round(s.rest)} bpm under stress`;
-      if (s.recovered_pct != null) change += ` · recovered ${Math.max(0, s.recovered_pct)}% toward calm afterwards`;
+      // recovery only means something for a signal that clearly reacted to the stressor
+      if (s.recovered_pct != null && used) change += ` · recovered ${Math.min(100, Math.max(0, s.recovered_pct))}% toward calm afterwards`;
     } else if (s.rest != null) {
       vals = `${fmt(s.rest)}${unit} at baseline`;
     }
@@ -858,9 +859,13 @@ function renderCalibrationReport(cal, extra) {
   $("calib-continue").disabled = !(cal && cal.ok);
 }
 
-async function calibrate() {
+// standalone: a calibration started from the home screen, recorded as its own dataset session.
+// Its recording stops as soon as the protocol ends (not when the profile screen is closed).
+async function calibrate({ standalone = false } = {}) {
   const p = protocol();
-  for (;;) {
+  const recording = standalone && $("ds-record").checked;
+  for (let attempt = 0; ; attempt++) {
+    if (recording && attempt > 0) send({ type: "session_start", meta: datasetMeta("calibration") }); // redo = new session
     show("calibration");
     const extra = { protocol: p.key };
     calibShow("rest", p);
@@ -883,6 +888,11 @@ async function calibrate() {
     setPhase("calibration_check");
     const cal = await waiting;
     send({ type: "event", name: "calibration", data: { ...(cal || {}), ...extra } });
+    if (recording) {
+      send({ type: "session_end", summary: { kind: "calibration", calibration: cal, ...extra } });
+      $("ds-status").textContent = `Calibration recorded for ${$("ds-participant").value.trim() || "anon"}` +
+        ($("ds-consent").checked ? " (with consent: will be exported)." : " (no consent: will NOT be exported).");
+    }
     calibShow("report", p);
     renderCalibrationReport(cal, extra);
     sfx.done();
@@ -923,12 +933,7 @@ async function calibrateOnly() {
   audio().resume();
   const recording = $("ds-record").checked;
   if (recording) send({ type: "session_start", meta: datasetMeta("calibration") });
-  await calibrate();
-  if (recording) {
-    send({ type: "session_end", summary: { kind: "calibration", calibration: state.baseline } });
-    $("ds-status").textContent = `Calibration recorded for ${$("ds-participant").value.trim() || "anon"}` +
-      ($("ds-consent").checked ? " (with consent: will be exported)." : " (no consent: will NOT be exported).");
-  }
+  await calibrate({ standalone: true });
   setPhase("idle");
   show("setup");
   state.busy = false;
