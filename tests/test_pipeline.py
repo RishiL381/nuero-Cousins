@@ -11,7 +11,7 @@ import numpy as np
 from scipy import signal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from clutch.engine import Config, Engine, StressModel  # noqa: E402
+from clutch.engine import GROUPS, Config, Engine, StressModel  # noqa: E402
 from clutch.learned import LiveScorer  # noqa: E402
 from clutch.processing import eeg_features, heart_rate  # noqa: E402
 from clutch.sources import MockSource  # noqa: E402
@@ -70,7 +70,7 @@ def test_stress_score_follows_phases():
                          ("round1", 60), ("reset", 60), ("round2", 60)])
     cal = eng.model.calibration
     assert cal is not None and cal["mode"] == "anchored", cal
-    eeg = {"alpha_TP9", "alpha_AF7", "alpha_AF8", "alpha_TP10"}
+    eeg = set(GROUPS["brain"])  # theta, alpha, beta per channel
     # the heart and most channels respond (simulated blinks add noise on the forehead channels, as in real data)
     assert "hr" in cal["used"] and len(eeg & set(cal["used"])) >= 3, cal["used"]
     print("calibration:", {k: (v["note"], round(v["effect"], 2), v.get("recovered_pct")) for k, v in cal["signals"].items()})
@@ -114,6 +114,17 @@ def test_headset_free_score_from_face_and_heart():
     f1, fs = late("round1", "stress"), late("reset", "stress")
     print(f"with EEG: round1={f1:.0f} reset={fs:.0f} | without headset: round1={b1:.0f} reset={bs:.0f}")
     assert b1 > 60 and bs < 25
+
+
+def test_individual_alpha_frequency():
+    from clutch.processing import individual_alpha_frequency, iaf_bands
+    freqs = np.arange(1, 45.5, 0.5)
+    rng = np.random.default_rng(4)
+    spectra = [10 / freqs * (1 + 1.5 * np.exp(-((freqs - 11.5) ** 2) / 0.8)) * rng.uniform(0.9, 1.1, freqs.size)
+               for _ in range(20)]                                       # 1/f background + alpha peak at 11.5 Hz
+    assert individual_alpha_frequency(spectra, freqs) == 11.5
+    assert individual_alpha_frequency([10 / freqs] * 20, freqs) is None  # no peak: no IAF
+    assert iaf_bands(12.0)["alpha"] == (8.0, 14.0)                        # Klimesch: IAF-4 to IAF+2
 
 
 def test_muscle_tension_is_flagged_and_excluded():
@@ -204,6 +215,7 @@ def test_trained_model_scores_live():
 
 
 if __name__ == "__main__":
+    test_individual_alpha_frequency()
     test_muscle_tension_is_flagged_and_excluded()
     test_trained_model_scores_live()
     test_headset_free_score_from_face_and_heart()

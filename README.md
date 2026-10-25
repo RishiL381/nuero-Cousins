@@ -3,6 +3,8 @@
 A Muse 2 measures stress in real time while you solve timed mental arithmetic. A guided breathing
 reset brings stress down, and a second round shows the effect on performance.
 
+**How the app works, step by step:** [docs/site-guide.md](docs/site-guide.md).
+
 ## Quick start (Windows)
 
 ```bash

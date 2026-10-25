@@ -24,7 +24,26 @@ def test_rmssd():
     assert rmssd_of([800, 820] * 10 + [2500]) == 20.0                          # implausible beat ignored
 
 
+def test_watch_is_released_after_failed_tries():
+    """The app must not keep searching forever: another computer has to be able to take the watch."""
+    import time
+    import clutch.watch as watch
+    watch.RETRY_PAUSE_S = 0.01
+    w = watch.WatchHR()
+
+    async def nothing_found():
+        return None, None
+    w._find = nothing_found
+    w.connect()
+    for _ in range(200):
+        if not w._thread.is_alive():
+            break
+        time.sleep(0.02)
+    assert not w._thread.is_alive() and not w._want and w.state == "error", w.status()
+
+
 if __name__ == "__main__":
+    test_watch_is_released_after_failed_tries()
     test_parse_heart_rate_and_rr()
     test_rmssd()
     print("all checks passed")

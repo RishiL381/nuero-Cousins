@@ -14,3 +14,4 @@ data/*_windows.csv
 ml/models/
 ml/results_*.md
 *.part
+settings.local.json

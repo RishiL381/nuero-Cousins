@@ -5,26 +5,27 @@ Usage (from the project folder):
     .venv\\Scripts\\python tools\\train_model.py --data dataset_export --save models
 
 Features are recomputed from the raw files of each session (raw_eeg.csv, raw_ppg.csv, raw_accel.csv,
-face.csv) with the same code as the live app (clutch/learned.py), one row per second of every phase.
+raw_hr.csv, face.csv) with the same code as the live app (clutch/learned.py), one row per second of every
+phase: brain bands set on the individual alpha frequency, muscle (30-44 Hz), heart and face.
 Each feature is taken relative to the first 45 s of the session's first rest block; those seconds are then
 left out of training and evaluation.
 
 Two ways to learn:
   A. label    the target is what the person was doing: rest = 0, stressor = 1 (labelled phases only).
-  B. teacher  the brain teaches the body: an EEG model (A on EEG features) gives its stress estimate for
+  B. teacher  the brain teaches the body: a brain model (A on brain features) gives its stress estimate for
               every second, labelled or not, and a heart + face model learns to imitate it. The EEG estimate
               is cross-fitted (each second is scored by an EEG model that did not train on it) so the student
               learns what the brain generalises, not what it memorised.
 Both are judged the same way: does the heart + face score separate the labelled rest and stress seconds of
-a session the model never saw (AUC)? The EEG and full (EEG + heart + face) models are evaluated alike: the
-better one is the "with headset" model the app uses while the Muse is on.
+a session the model never saw (AUC)? The brain, headset (brain + muscle) and full models are evaluated
+alike: the best one is the "with headset" model the app uses while the Muse is on.
 
 Validation, chosen automatically:
   - 2+ participants: leave-one-participant-out;
   - 1 participant, 2+ sessions: leave-one-session-out (a personal model tested on a new session);
   - 1 session: each phase cut into 5 contiguous blocks, 15 s removed around the test block (weak check).
 --save writes models/label.joblib, models/teacher.joblib, models/headset_free.joblib (the better of the two)
-and models/with_headset.joblib (the better of EEG and full); the app loads both at start-up.
+and models/with_headset.joblib (the best of brain, headset and full); the app loads both at start-up.
 """
 
 import argparse
@@ -44,7 +45,8 @@ from sklearn.metrics import balanced_accuracy_score, roc_auc_score
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from clutch.learned import (ALL_FEATURES, BASELINE_S, EEG_CHANNELS, FEATURE_SETS, SMOOTH_S,  # noqa: E402
-                            baseline_of, row_features, window_mean)
+                            WITH_HEADSET_SETS, baseline_of, estimate_iaf, features_from, row_inputs, to_vector,
+                            window_mean)
 from clutch.processing import eeg_features, heart_rate, motion_level  # noqa: E402
 from clutch.watch import MAX_AGE_S, RMSSD_WINDOW_S, rmssd_of  # noqa: E402
 
@@ -74,7 +76,8 @@ def window(t, x, t_end, seconds, fs):
 
 
 def session_rows(sdir: Path, notch_hz: float):
-    """One raw feature row per second of every phase (label NaN where the phase is unlabelled)."""
+    """One row per second of every phase (label NaN where the phase is unlabelled), holding the raw inputs
+    (spectra, heart, face) in column "inputs"; features are computed in normalise() once the IAF is known."""
     meta = json.loads((sdir / "meta.json").read_text())
     phases = [r for r in csv.DictReader(open(sdir / "labels.csv")) if r["phase"] not in SKIP_PHASES]
     te, eeg, eeg_names = load_raw(sdir / "raw_eeg.csv")
@@ -106,13 +109,13 @@ def session_rows(sdir: Path, notch_hz: float):
                     f = {c: (None if pd.isna(v) else v) for c, v in recent.iloc[-1].to_dict().items()}
             rows.append({"participant": meta.get("participant", sdir.name), "session": sdir.name, "t": float(tt),
                          "phase": ph["phase"], "label": float(ph["label"]) if ph["label"] != "" else np.nan,
-                         "block": k, "since_start": float(tt - t0), **row_features(feats, hr, motion, f)})
+                         "block": k, "since_start": float(tt - t0), "inputs": row_inputs(feats, hr, motion, f)})
     return rows
 
 
 def normalise(df: pd.DataFrame) -> pd.DataFrame:
-    """Baseline-correct each session with the first BASELINE_S of its first rest block, smooth causally within
-    each phase."""
+    """Per session: estimate the IAF on the first BASELINE_S of the first rest block (as live), compute the
+    features with bands set on it, baseline-correct with those same seconds, smooth causally within each phase."""
     out = []
     for sess, s in df.groupby("session"):
         s = s.sort_values("t").copy()
@@ -121,7 +124,10 @@ def normalise(df: pd.DataFrame) -> pd.DataFrame:
             print(f"  {sess}: no rest block, skipped")
             continue
         is_base = ((s["block"] == rest_blocks.min()) & (s["since_start"] <= BASELINE_S)).to_numpy()
-        X = s[ALL_FEATURES].to_numpy(dtype=float)
+        iaf = estimate_iaf(list(s.loc[is_base, "inputs"]))
+        print(f"  {sess}: individual alpha frequency {iaf:.1f} Hz")
+        X = np.vstack([to_vector(features_from(x, iaf)) for x in s["inputs"]])
+        s = s.drop(columns="inputs").assign(iaf=iaf)
         X = X - baseline_of(list(X[is_base]))
         t, blocks = s["t"].to_numpy(), s["block"].to_numpy()
         s[ALL_FEATURES] = np.vstack([window_mean(list(X[(blocks == blocks[i]) & (t > t[i] - SMOOTH_S) & (t <= t[i])]))
@@ -134,7 +140,7 @@ def eeg_teacher(sub: pd.DataFrame) -> np.ndarray:
     """The brain's own stress estimate (0-1) for every row of sub, labelled or not: an EEG model trained on
     the labelled rows, cross-fitted with folds() so that no row is scored by a model that trained on it."""
     sub = sub.reset_index(drop=True)
-    X, lab = sub[FEATURE_SETS["eeg"]].to_numpy(dtype=float), sub["label"].to_numpy()
+    X, lab = sub[FEATURE_SETS["brain"]].to_numpy(dtype=float), sub["label"].to_numpy()
     out = np.full(len(sub), np.nan)
     for _, tr, te in folds(sub):
         ok = tr & ~np.isnan(lab)
@@ -206,7 +212,7 @@ def evaluate(df, kind, features, importance=False, train_frac=1.0):
             y = eeg_teacher(df[train])
             if np.isnan(y).all():
                 continue
-            E, ok = df[FEATURE_SETS["eeg"]].to_numpy(dtype=float), train & ~np.isnan(lab)
+            E, ok = df[FEATURE_SETS["brain"]].to_numpy(dtype=float), train & ~np.isnan(lab)
             ecols = ~np.all(np.isnan(E[ok]), axis=0)
             brain[test] = HistGradientBoostingClassifier(**PARAMS).fit(E[ok][:, ecols], lab[ok]).predict_proba(
                 E[test][:, ecols])[:, 1]
@@ -260,7 +266,7 @@ def main():
     preds = {}
     print(f"\n{'model':10s} {'signals':13s} {'AUC':>5s} {'bal.acc':>8s} {'imitation r':>12s}   AUC per fold")
     for title, kind, name in runs:
-        res, pred = evaluate(df, kind, FEATURE_SETS[name], importance=name in ("headset_free", "eeg"))
+        res, pred = evaluate(df, kind, FEATURE_SETS[name], importance=name in ("headset_free", "headset"))
         report["results"][f"{kind}:{name}"] = res
         preds[f"{kind}:{name}"] = pred
         if res["auc"] is None:
@@ -270,10 +276,11 @@ def main():
         print(f"{title:10s} {name:13s} {res['auc']:5.2f} {res['balanced_acc']:8.2f} "
               f"{'' if imit is None else f'{imit:.2f}':>12s}   {res['auc_folds']}")
 
-    report["teacher_auc"] = report["results"]["label:eeg"].get("auc")  # the teacher: the brain on its own
-    with_headset = max(("eeg", "full"), key=lambda k: report["results"][f"label:{k}"].get("auc") or 0)
+    report["teacher_auc"] = report["results"]["label:brain"].get("auc")  # the teacher: the brain on its own
+    with_headset = max(WITH_HEADSET_SETS, key=lambda k: report["results"][f"label:{k}"].get("auc") or 0)
     report["with_headset"] = with_headset
-    for key in ("label:headset_free", "teacher:headset_free", "label:eeg"):
+    report["iaf"] = {sess: round(float(v), 2) for sess, v in df.groupby("session")["iaf"].first().items()}
+    for key in ("label:headset_free", "teacher:headset_free", "label:headset"):
         imp = report["results"][key].get("importance", {})
         if imp:
             print(f"\nMost useful features, {key} (drop in AUC when shuffled):")

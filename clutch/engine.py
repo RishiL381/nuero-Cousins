@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .learned import LiveScorer, row_features
+from .learned import LiveScorer, brain_values, estimate_iaf, row_inputs
 from .personal import PersonalModel
 from .processing import eeg_features, heart_rate, motion_level
 from .watch import WatchHR
@@ -42,24 +42,26 @@ CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose 
 # Study protocol blocks (headset on): added to the personal model's training data, retrained at study_done
 STUDY_PHASES = ("study_relax", "study_math_easy", "study_math_hard", "study_stroop_hard")
 # Expected direction under stress: +1 goes up, -1 goes down, 0 = learned per person from the calibration.
-#   alpha_<ch>   log10 absolute alpha power (8-12 Hz) of ONE Muse channel, compared with itself between
-#                phases. Chosen over relative alpha because blinks barely touch 8-12 Hz: on simulated data
-#                with blinks, relative alpha lost the forehead channels (d ~ 0) while log alpha kept them.
-#                Alpha suppression is the most consistent EEG marker of acute stress (meta-analysis,
-#                Vanhollebeke et al., 2022); beta is not, so the alpha/beta ratio is no longer used.
+#   <band>_<ch>  brain: log10 theta, alpha or low-beta power of ONE Muse channel, compared with itself between
+#                phases, in bands set on the person's individual alpha frequency (IAF, Klimesch 1999) measured
+#                on the calibration rest; muscle-free, clean windows only. Direction learned: on P01 session 2,
+#                alpha rose under stress on most channels, so "alpha must drop" rejected the whole EEG, while
+#                theta + alpha + beta with a learned direction separated the unseen study blocks (AUC 0.86,
+#                docs/methods.md). Alpha suppression remains the average finding (Vanhollebeke et al., 2022).
 #   hr           heart rate in bpm (Muse PPG now, a Garmin watch later), up with stress
 #   face_*       MediaPipe blendshape means (0-1): brows lowered, lips pressed, eyes squinted, frown, smile
 #   blink_rate   blinks per minute, head_motion: head movement (face widths per second)
 EEG_CHANNELS = ("TP9", "AF7", "AF8", "TP10")
+BRAIN_BANDS = ("theta", "alpha", "beta")
 SIGNALS = {
-    **{f"alpha_{ch}": -1 for ch in EEG_CHANNELS}, "hr": +1, "hrv": -1,
+    **{f"{b}_{ch}": 0 for ch in EEG_CHANNELS for b in BRAIN_BANDS}, "hr": +1, "hrv": -1,
     "face_brow": +1, "face_press": +1, "face_squint": +1, "face_frown": +1, "face_smile": 0,
     "blink_rate": 0, "head_motion": +1,
 }
 # Each modality counts once in the score, whatever its number of signals (so 4 EEG channels or 7 face
 # indicators cannot outvote the heart). Inside a group, signals are averaged weighted by their effect size.
 GROUPS = {
-    "brain": [f"alpha_{ch}" for ch in EEG_CHANNELS],
+    "brain": [f"{b}_{ch}" for ch in EEG_CHANNELS for b in BRAIN_BANDS],
     "heart": ["hr", "hrv"],
     "face": ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"],
 }
@@ -109,14 +111,18 @@ class StressModel:
     personal: PersonalModel | None = None  # heart + face -> EEG stress, trained on this person's calibration
     _calib_ticks: dict = field(default_factory=dict)  # the last good calibration's ticks, per phase
     _study_ticks: dict = field(default_factory=dict)  # study phase -> ticks since the last calibration
+    iaf: float | None = None  # individual alpha frequency of the last good calibration (Hz)
+    _inputs: dict = field(default_factory=_empty_ticks)  # spectra per tick, aligned with _ticks (brain recompute)
 
     @property
     def baseline(self):  # kept for callers that only need to know whether we are calibrated
         return self.calibration
 
-    def collect(self, phase, values: dict, dropped: dict | None = None):
+    def collect(self, phase, values: dict, dropped: dict | None = None, inputs: dict | None = None):
         """values: signal name -> current value (None or missing = not available this tick).
-        dropped: signal name -> why its value was rejected this tick ("contact", "motion", "muscle")."""
+        dropped: signal name -> why its value was rejected this tick ("contact", "motion", "muscle").
+        inputs: this tick's spectra (learned.row_inputs), kept during calibration so that the brain signals can
+        be recomputed with the IAF once the rest is over."""
         if phase in STUDY_PHASES and self.calibration is not None:
             self._study_ticks.setdefault(phase, []).append(
                 {k: float(x) for k, x in values.items() if k in SIGNALS and x is not None})
@@ -135,6 +141,25 @@ class StressModel:
             counts = self._dropped.setdefault(name, {})
             counts[why] = counts.get(why, 0) + 1
         self._ticks[phase].append(tick)
+        self._inputs[phase].append(inputs)
+
+    def _brain_with_iaf(self):
+        """Brain signals need the person's IAF, known only once the rest is recorded: estimate it on the
+        calibration rest, then recompute every calibration tick's brain values with it. Returns the IAF, or
+        None when no spectra were kept (values then stay as collected)."""
+        rest = [x for x in self._inputs["calib_rest"] if x is not None]
+        if not rest:
+            return None
+        iaf, brain = estimate_iaf(rest), GROUPS["brain"]
+        for phase, ticks in self._ticks.items():
+            for tick, x in zip(ticks, self._inputs[phase]):
+                if x is not None:
+                    for k in brain:
+                        tick.pop(k, None)
+                    tick.update(brain_values(x, iaf))
+            for k in brain:
+                self._samples[phase][k] = [t[k] for t in ticks if k in t]
+        return iaf
 
     def split_half_check(self) -> dict:
         """Flip check: does this calibration point the right way for this person?
@@ -178,6 +203,7 @@ class StressModel:
         return {"passed": passed, "auc": round(auc, 2), "gap": round(gap, 2), "signals": sorted(anchors), "note": note}
 
     def finalize(self) -> dict:
+        iaf = self._brain_with_iaf()
         check = self.split_half_check()
         rest, stress = self._samples["calib_rest"], self._samples["calib_stress"]
         signals = {}
@@ -230,6 +256,7 @@ class StressModel:
             mode, confidence = None, None
 
         cal = {"ok": mode is not None, "mode": mode, "confidence": confidence, "used": used, "check": check,
+               "iaf": iaf,
                "used_without_headset": [k for k in used if k not in HEADSET_SIGNALS],
                "signals": {k: {kk: (round(vv, 3) if isinstance(vv, float) else vv) for kk, vv in v.items()}
                            for k, v in signals.items() if v["n_rest"] or v["n_stress"] or "dropped" in v}}
@@ -237,9 +264,11 @@ class StressModel:
             model, cal["personal"] = self._fit_personal(self._ticks, signals)
             self._calib_ticks, self._study_ticks = self._ticks, {}
         self._samples, self._dropped = _empty_samples(), {}
-        self._ticks = _empty_ticks()
+        self._ticks, self._inputs = _empty_ticks(), _empty_ticks()
         if cal["ok"]:
             self.calibration = cal
+            if iaf is not None:
+                self.iaf = iaf
             self._signals = signals
             self.personal = model
             self._smoothed = {}
@@ -522,10 +551,12 @@ class Engine:
         ppg = src.get_ppg(src.ppg_fs * cfg.ppg_window_s) if src.ppg_fs else None
         acc = src.get_accel(src.accel_fs * cfg.motion_window_s) if src.accel_fs else None
 
+        psd = None
         if eeg is None or eeg.shape[1] < src.eeg_fs * 2:
             feats = {"channels": {}, "usable": 0, "ratio_log": None, "warming_up": True}
         else:
             feats = eeg_features(eeg, src.eeg_fs, src.eeg_names, cfg.notch_hz)
+        psd = feats.pop("psd", None)  # spectra for the trained models; too big for the WebSocket and the logs
         hr = heart_rate(ppg, src.ppg_fs) if ppg is not None else {"bpm": None, "quality": 0.0}
         hr["source"] = "muse" if hr.get("bpm") is not None else None
         watch_bpm = self.watch.latest()
@@ -539,31 +570,42 @@ class Engine:
             if motion["flag"]:
                 ratio = None  # head movement corrupts EEG; skip this window
             face = self._face if (self._face and time.time() - self._face_t < cfg.face_max_age_s) else None
-            # one value per EEG channel: log alpha, dropped for bad contact, head motion or muscle tension
-            alphas, dropped = {}, {}
+            # Brain signals: theta / alpha / beta per channel in the person's IAF bands (known after a calibration;
+            # during the first one they are recomputed at its end), dropped for bad contact, head motion or muscle.
+            inputs = row_inputs({**feats, "psd": psd}, hr, motion, face, cfg.min_hr_quality)
+            brain, dropped = {}, {}
             for n, ch in feats.get("channels", {}).items():
                 why = ("contact" if ch["q"] == "bad" else "motion" if motion["flag"]
                        else "muscle" if ch.get("muscle") else None)
-                alphas[f"alpha_{n}"] = None if why else ch["alphalog"]
-                if why:
-                    dropped[f"alpha_{n}"] = why
-            values = {**alphas, "hr": hr["bpm"] if hr["quality"] >= cfg.min_hr_quality else None,
+                for b in BRAIN_BANDS:
+                    brain[f"{b}_{n}"] = None
+                    if why:
+                        dropped[f"{b}_{n}"] = why
+            if self.model.iaf is not None and brain:
+                brain.update(brain_values(inputs, self.model.iaf))
+            values = {**brain, "hr": hr["bpm"] if hr["quality"] >= cfg.min_hr_quality else None,
                       "hrv": hr.get("rmssd"), **(face or {})}
-            self.model.collect(self.phase, values, dropped)
+            self.model.collect(self.phase, values, dropped, inputs if self.phase in CALIB_PHASES else None)
             full, body, z = self.model.score(values, cfg.tick_s)
-            personal = self.model.personal_score(values, cfg.tick_s)
-            # Main score: with EEG when the headset streams, otherwise the personal model (or the rule-based
-            # headset-free score when the personal model could not be trained).
-            stress = full if eeg is not None else (personal if personal is not None else body)
+            personal = self.model.personal_score(values, cfg.tick_s)  # heart + face imitating the EEG, this calibration
             # Trained models (tools/train_model.py), when installed: heart + face, and with the headset (brain)
-            row = row_features(feats, hr, motion, face, cfg.min_hr_quality)
-            ml = self.learned.update(cfg.tick_s, self.phase, row) if self.learned else None
-            ml_headset = self.learned_headset.update(cfg.tick_s, self.phase, row) if self.learned_headset else None
+            ml = self.learned.update(cfg.tick_s, self.phase, inputs) if self.learned else None
+            ml_headset = self.learned_headset.update(cfg.tick_s, self.phase, inputs) if self.learned_headset else None
+            # Main score: the trained brain model while the headset streams, else the calibration rule with the
+            # EEG; without the headset, the personal model from this calibration, the trained heart + face model,
+            # else the calibration rule on heart + face.
+            headset_on = eeg is not None and feats.get("usable", 0) > 0
+            stress, source = next(((v, name) for v, name in (
+                (ml_headset if headset_on else None, "trained brain model"),
+                (full if headset_on else None, "calibration (brain + heart + face)"),
+                (personal, "personal heart + face model (this calibration)"),
+                (ml, "trained heart + face model"),
+                (body, "calibration (heart + face)")) if v is not None), (None, None))
             self.seq += 1
             m = {
                 "type": "metrics", "seq": self.seq, "t": self.now(), "phase": self.phase,
-                "stress": stress, "stress_body": body, "stress_ml": ml, "stress_ml_headset": ml_headset,
-                "stress_personal": personal,
+                "stress": stress, "stress_source": source, "stress_body": body, "stress_ml": ml,
+                "stress_ml_headset": ml_headset, "stress_personal": personal,
                 "learned": self.learned.info if self.learned else None,
                 "learned_headset": self.learned_headset.info if self.learned_headset else None,
                 "calibrated": self.model.calibration is not None,

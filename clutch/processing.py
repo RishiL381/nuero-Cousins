@@ -117,13 +117,49 @@ def eeg_features(eeg_raw: np.ndarray, fs: float, names: list[str], notch_hz: flo
             usable_ratios.append(np.log10((powers["alpha"][i] + 1e-12) / (powers["beta"][i] + 1e-12)))
             usable_idx.append(i)
 
-    feats = {"channels": channels, "usable": len(usable_idx), "ratio_log": None}
+    # Full spectrum per channel (0.5 Hz steps, 1-45 Hz), for bands set on the person's alpha frequency (iaf_bands);
+    # the engine keeps it out of the WebSocket messages and logs.
+    keep = (freqs >= 1) & (freqs <= 45)
+    feats = {"channels": channels, "usable": len(usable_idx), "ratio_log": None,
+             "psd": {"freqs": freqs[keep], **{name: psd[i, keep] for i, name in enumerate(names)}}}
     if usable_idx:
         feats["ratio_log"] = float(np.median(usable_ratios))
         for b in BANDS:
             rel = [channels[names[i]][b] for i in usable_idx]
             feats[b] = round(float(np.median(rel)), 3)
     return feats
+
+
+IAF_DEFAULT = 10.0
+
+
+def individual_alpha_frequency(psds: list[np.ndarray], freqs: np.ndarray) -> float | None:
+    """Peak alpha frequency (Hz) of one channel from resting spectra, or None without a clear peak.
+
+    The mean log spectrum is detrended by its 1/f background (straight line in log-log fitted on 3-30 Hz,
+    7-14 Hz left out); the IAF is the highest local maximum between 7 and 13 Hz that stands at least 0.1 log
+    units (26%) above the background. A maximum at the edge of the range is not a peak.
+    """
+    if len(psds) < 5:
+        return None
+    lp = np.log10(np.mean(psds, axis=0) + 1e-12)
+    fit = (freqs >= 3) & (freqs <= 30) & ~((freqs >= 7) & (freqs <= 14))
+    coef = np.polyfit(np.log10(freqs[fit]), lp[fit], 1)
+    resid = lp - np.polyval(coef, np.log10(np.maximum(freqs, 0.1)))
+    band = np.where((freqs >= 6.5) & (freqs <= 13.5))[0]
+    peaks, _ = signal.find_peaks(resid[band])
+    peaks = [band[p] for p in peaks if 7 <= freqs[band[p]] <= 13 and resid[band[p]] >= 0.1]
+    return float(freqs[max(peaks, key=lambda i: resid[i])]) if peaks else None
+
+
+def iaf_bands(iaf: float) -> dict:
+    """Frequency bands anchored on the individual alpha frequency (Klimesch, 1999), plus the muscle band."""
+    return {"theta": (iaf - 6, iaf - 4), "alpha": (iaf - 4, iaf + 2), "beta": (iaf + 2, 20.0), "muscle": (30.0, 44.0)}
+
+
+def band_logs(psd: np.ndarray, freqs: np.ndarray, iaf: float) -> dict:
+    """log10 power (uV^2) of each IAF band for one channel's spectrum."""
+    return {b: float(np.log10(_band_power(freqs, psd, lo, hi) + 1e-12)) for b, (lo, hi) in iaf_bands(iaf).items()}
 
 
 def heart_rate(ppg: np.ndarray, fs: float) -> dict:

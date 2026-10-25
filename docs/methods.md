@@ -76,13 +76,24 @@ Two presets are available: **Standard** (recommended) and **Short** (for live de
 - **Channels:** TP9, AF7, AF8, TP10.
 - **Preprocessing:** band-pass 1–45 Hz and a 60 Hz notch, on 4-second windows updated every 0.5 s.
 - **Band power:** Welch's averaged-periodogram method (Welch, 1967), integrated over theta (4–8 Hz), alpha (8–12 Hz) and beta (13–30 Hz).
-- **Feature: alpha power per channel.** For each of the four channels, `log10` of the absolute alpha power (µV²). Each channel is compared **with itself** between baseline and stressor, and only in windows where that channel has acceptable contact.
+- **Features: theta, alpha and low-beta power per channel.** For each of the four channels, `log10` of the absolute power (µV²) in bands set on the person's individual alpha frequency, which is measured on the calibration rest (see *Bands* below). Each channel and band is compared **with itself** between baseline and stressor. Only windows where that channel has acceptable contact, no head motion and no muscle tension are used.
+- **Direction learned per person:** the calibration keeps each band whose change has |d| ≥ 0.5, in whichever direction it moved. On P01 session 2, alpha *rose* under stress on most channels. The former rule ("alpha must drop", fixed 8–12 Hz) kept no EEG signal at all.
+  - Rule variants built on the session 2 calibration and judged on its study blocks (unseen):
+    - fixed alpha, must drop: no signal, EEG unused (even with d ≥ 0.2);
+    - IAF alpha, must drop: 0.26;
+    - IAF alpha, learned direction: 0.75;
+    - **IAF theta + alpha + beta, learned direction: 0.86**. This is the current rule, and as good as the trained brain model.
+  - Learning the direction can pick up noise: the calibration check (first half vs second half) is the safeguard.
 - **Why alpha, and not alpha/beta:**
   - in a meta-analysis of spectral EEG studies of psychosocial stress, alpha power decreased consistently (Hedges' g = 0.6, p = 0.001), while beta showed no significant pooled effect (g = −0.31, p = 0.29) and frontal alpha asymmetry no effect (Vanhollebeke et al., 2022);
   - alpha oscillations track cognitive state and performance (Klimesch, 1999); frontal alpha decreases under mental arithmetic stress (Al-Shargie et al., 2016).
 - **Why per channel:** in our first real session (P01), the median over the four channels showed no change because channels moved in opposite directions. The right forehead channel (AF8) showed a large alpha decrease (d = 1.14), the channels behind the ears an increase. Contact also differed between phases, so a median mixed different channels across conditions.
 - **Why absolute log power rather than relative power:** blinks put most of their energy below 4 Hz but spill into theta. On simulated data with blinks on the forehead channels, relative alpha lost those channels (d ≈ 0), while log absolute alpha kept them (d ≈ 1.8–2.3). Absolute power is only compared within one channel and one session, so electrode impedance differences between people do not matter.
-- **Limitation:** Klimesch (1999) recommends adjusting bands to each person's individual alpha frequency. Clutch uses fixed bands for now.
+- **Bands:**
+  - The live calibration rule uses fixed bands.
+  - The trained models use bands set on the person's **individual alpha frequency** (IAF), as Klimesch (1999) recommends: theta IAF−6 to IAF−4, alpha IAF−4 to IAF+2, low beta IAF+2 to 20 Hz.
+  - **How the IAF is measured:** on the first 45 s of rest, take the highest local peak between 7 and 13 Hz, above the 1/f background by at least 0.1 log units. Peaks at the edge of the range are ignored. The IAF is the median over channels, and 10 Hz when no channel shows a peak.
+  - **P01:** 11.0 Hz in session 1, 12.0 Hz in session 2. The fixed 8–12 Hz band missed the upper half of this alpha.
 - **Muscle rejection:** forehead and jaw muscle activity (EMG) adds broadband power from about 20 Hz upwards. It is largest at peripheral sites such as the Muse forehead and ear channels, and is detectable above 12 Hz even with weak contractions (Goncharova et al., 2003). A channel window whose relative 30–44 Hz power exceeds **0.10** is treated as muscle-contaminated and left out, for that channel only, as with bad contact or head motion. The interface then asks the user to relax forehead and jaw, and the calibration report gives the share of windows rejected per sensor.
   - **Why:** in P01, beta correlated with 30–44 Hz power on every channel (r = 0.74–0.87), so the beta changes reflected muscle tension rather than the brain. The left forehead channel (AF7) had 30–44 Hz power around 0.13 during the baseline, against about 0.01 on the clean ear channels.
   - **Effect on P01:** with the rule, AF8's alpha response grows from d = 0.70 to 0.84, and AF7's spurious opposite response shrinks from d = −0.59 to −0.28.
@@ -95,7 +106,7 @@ Two presets are available: **Standard** (recommended) and **Short** (for live de
 - **Methodological guidance:** heart rate variability (HRV) is a stronger marker but needs cleaner recordings; we follow the recommendations of Laborde et al. (2017) for any future HRV work.
 
 ### Decision rule
-For each signal (each EEG channel, heart rate, each face indicator) we compute **Cohen's d** between the stressor and baseline samples, signed so that a positive value means the expected direction: alpha down, heart rate up. For face indicators with no established direction (smile, blink rate), the direction is learned from the calibration.
+For each signal (each EEG channel, heart rate, each face indicator) we compute **Cohen's d** between the stressor and baseline samples, signed so that a positive value means the expected direction: heart rate up, face tension up. For EEG bands and for face indicators with no established direction (smile, blink rate), the direction is learned from the calibration.
 
 | d | Label (Cohen, 1988) | Used? |
 |---|---|---|
@@ -117,7 +128,11 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
 
 ### Learned model (towards no headset)
 `tools/train_model.py` trains gradient-boosted decision trees (scikit-learn `HistGradientBoosting`, which handles missing values natively) in two ways, and compares them on data the model never saw.
-- **Features** (`clutch/learned.py`, shared with the live app): log theta, alpha and beta power per EEG channel (clean windows only), heart rate, and the seven face indicators, every second.
+- **Features** (`clutch/learned.py`, shared with the live app), every second:
+  - **brain:** log theta, alpha and low-beta power per channel, in IAF bands. Muscle-free windows only.
+  - **muscle:** log 30–44 Hz power per channel. Kept separate so each model shows which one it relies on.
+  - **heart:** heart rate, plus RMSSD when the watch sends beat intervals.
+  - **face:** the seven face indicators.
 - **Personal reference:** each feature is taken relative to the median of the first 45 s of the session's first rest block. Those seconds are then excluded from training and testing. The features are averaged over the last 10 s.
 - **A. Label model:** predicts what the person was doing. Rest = 0 (`calib_rest`, `study_relax`), stressor = 1 (`calib_stress`, `study_math_hard`, `study_stroop_hard`). It uses labelled seconds only. Feature sets: full, headset-free (heart + face), and each modality alone.
 - **B. Brain-taught model:** heart + face learn to imitate the brain.
@@ -133,29 +148,33 @@ The breathing reset paces breathing at 6 breaths per minute. The mechanisms of s
   - with one session: 5 contiguous time blocks per phase, with 15 s removed around each test block. This is weak.
   - Random splits are not used: neighbouring seconds share overlapping windows and would inflate the score.
 - **Live use:** `--save models` (or "Train model" in the app) saves:
-  - `with_headset.joblib`: the better of the EEG and full models, used while the Muse streams;
+  - `with_headset.joblib`: the best of the brain, brain + muscle and full models. It **drives the live gauge while the Muse streams**, and the app shows which score the gauge uses;
   - `headset_free.joblib`: the better of the label and brain-taught heart + face models.
   - Both start scoring 45 s into a calibration, next to the rule-based scores, with ~5 s output smoothing.
 
-**Results, P01, 2 sessions (25 October), leave-one-session-out, AUC on the unseen session:**
+**Results, P01, 2 sessions (25 October), IAF bands, leave-one-session-out, AUC on the unseen session:**
 
 | Model | Signals | Session 1 | Session 2 | Pooled |
 |---|---|---|---|---|
-| A label | **EEG** | **0.92** | **0.91** | **0.87** |
-| A label | EEG + heart + face | 1.00 | 0.74 | 0.81 |
+| A label | **brain** | **0.95** | **0.88** | **0.87** |
+| A label | brain + muscle | 0.93 | 0.88 | 0.85 |
+| A label | everything | 0.99 | 0.72 | 0.77 |
+| A label | muscle | 0.67 | 0.40 | 0.40 |
 | A label | heart + face | 1.00 | 0.67 | 0.72 |
 | A label | face | 1.00 | 0.65 | 0.72 |
-| A label | heart | 0.73 | 0.62 | 0.65 |
-| B brain-taught | heart + face | 0.83 | 0.52 | 0.57 (imitation r = 0.01) |
+| A label | heart (Muse PPG) | 0.73 | 0.62 | 0.65 |
+| B brain-taught | heart + face | 0.85 | 0.64 | 0.65 (imitation r = 0.03) |
 
 - **The brain transfers best to a new session.** Heart + face scores 1.00 on session 1 when trained on session 2, but only 0.67 the other way. Their pattern is not stable between sessions.
-- **What the EEG model uses** (permutation importance): beta at TP10 and AF7, then alpha at AF8.
-  - AF8 alpha drops under stress in both sessions (d = −1.08 and −0.50) and does not drift with time. This is the brain marker expected from the literature (Vanhollebeke et al., 2022).
-  - TP9/TP10 power rises in all bands during tasks, and AF7 beta rises strongly. This is most likely jaw, temple and forehead muscle tension (Goncharova et al., 2003). It is real stress physiology, but muscular, and only the headset picks it up.
-- **Score per phase on session 2** (with-headset model, unseen): rest 0.41, stress test 0.85, relaxation 0.15, easy math 0.82, hard math 0.90, hard colour words 0.68.
+- **Muscle does not explain it.** 30–44 Hz power alone is at chance, and adding it does not help the brain features. An earlier reading of this data said the stress signal was mostly muscle: that was wrong.
+- **What the brain model uses** (permutation importance): low beta (IAF+2 to 20 Hz) at TP10 and AF7, then alpha at AF8.
+  - AF8 alpha drops under stress in both sessions and does not drift with time. This is the marker expected from the literature (Vanhollebeke et al., 2022).
+  - Low beta in muscle-free windows can still hold weak muscle activity below the 0.10 threshold. That cannot be ruled out with 4 dry channels.
+- **Heart rate in these two sessions came from the Muse forehead PPG.** It was often wrong: about 125 bpm while a Garmin read about 60 bpm at the same time. Heart results should be read with that in mind. New sessions use the watch.
+- **Score per phase on session 2** (brain model, unseen): rest 0.33, stress test 0.95, recovery 0.35, relaxation 0.23, easy math 0.92, hard math 0.96, hard colour words 0.61.
   - Relaxation is correctly calm.
   - Easy math scores almost as high as hard math, so part of what the model detects is "doing a task" rather than stress.
-- **Heart + face cannot yet imitate the brain** (r = 0.01 on the unseen session). Removing the headset is not supported by two sessions. More sessions are needed to tell whether this is a data problem or a real limit.
+- **Heart + face cannot yet imitate the brain** (r = 0.03 on the unseen session). Removing the headset is not supported by two sessions. More sessions are needed to tell whether this is a data problem or a real limit.
 - **Session 2 data issue:**
   - another browser tab reset the phase to idle 22 s into the 3-minute baseline. The 566–723 s range was relabelled `calib_rest` (originals kept as `*.orig`).
   - The bug is fixed: only the tab running a protocol restores its phase after a reconnect.

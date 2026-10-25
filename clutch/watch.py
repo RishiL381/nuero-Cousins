@@ -20,6 +20,8 @@ HR_MEASUREMENT = "00002a37-0000-1000-8000-00805f9b34fb"
 SCAN_S = 8.0
 MAX_AGE_S = 5.0        # a heart rate older than this is not used
 RMSSD_WINDOW_S = 30.0
+MAX_TRIES = 3          # failed searches or lost connections in a row before letting the watch go
+RETRY_PAUSE_S = 3.0
 
 
 def parse_measurement(data: bytes) -> tuple[int, list[float]]:
@@ -125,28 +127,39 @@ class WatchHR:
         return device, name
 
     async def _run(self):
+        """Connects on demand; after MAX_TRIES failures in a row it stops, so the app never keeps the watch
+        busy and another computer can connect to it."""
         from bleak import BleakClient
+        tries = 0
         while self._want:
+            if tries >= MAX_TRIES:
+                self._want = False
+                self._set("error", "Watch not found or taken by another computer. Click Retry to try again.")
+                break
+            tries += 1
             try:
                 device, name = await self._find()
                 if device is None:
-                    self._set("error", "No watch found. On the watch, start \"Broadcast Heart Rate\", then retry.")
-                    await asyncio.sleep(3)
+                    self._set("searching", f"No watch found yet (try {tries}/{MAX_TRIES}). On the watch, start "
+                              "\"Broadcast Heart Rate\".")
+                    await asyncio.sleep(RETRY_PAUSE_S)
                     continue
                 self.name, self.address = name or device.address, device.address
                 self._set("connecting", f"Connecting to {self.name}…")
                 async with BleakClient(device) as client:
                     await client.start_notify(HR_MEASUREMENT, self._on_notify)
                     self._set("streaming", f"Streaming from {self.name}")
+                    tries = 0
                     while self._want and client.is_connected:
                         await asyncio.sleep(0.5)
                     if client.is_connected:
                         await client.stop_notify(HR_MEASUREMENT)
                 if self._want:
-                    self._set("searching", "Connection lost, reconnecting…")
+                    self._set("searching", f"Connection lost, reconnecting (try {tries + 1}/{MAX_TRIES})…")
             except Exception as exc:  # BLE errors: show them and retry while the user wants the watch
                 self._set("error", f"{type(exc).__name__}: {exc}"[:200])
-                await asyncio.sleep(3)
-        self._set("off", "Not connected")
+                await asyncio.sleep(RETRY_PAUSE_S)
+        if self.state != "error":
+            self._set("off", "Not connected")
         with self._lock:
             self._bpm = None

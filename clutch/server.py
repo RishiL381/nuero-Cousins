@@ -103,7 +103,7 @@ def create_app(engine: Engine) -> FastAPI:
                 elif kind == "headset_disconnect" and hasattr(src, "headset"):
                     src.headset.disconnect()
                 elif kind == "watch_connect":
-                    engine.watch.connect(msg.get("name"))
+                    engine.watch.connect(msg.get("name"))  # on demand only: the watch serves one computer
                 elif kind == "watch_disconnect":
                     engine.watch.disconnect()
                 elif kind == "mock_stress" and isinstance(src, MockSource):

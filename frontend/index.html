@@ -98,7 +98,8 @@
             </dl>
             <p class="hint">More reliable than the headset's forehead sensor. On the Garmin, start <b>Broadcast Heart
               Rate</b> (controls menu, or Settings › Sensors › Wrist heart rate, depending on the model), then click
-              Connect. Older Garmins broadcast over ANT+ only and cannot connect here. Any Bluetooth heart rate strap
+              Connect. The watch serves one computer at a time: click Disconnect to hand it over to another one.
+              Older Garmins broadcast over ANT+ only and cannot connect here. Any Bluetooth heart rate strap
               (Polar H10…) also works, and gives the best variability data.</p>
           </div>
         </div>
@@ -167,6 +168,7 @@
             <h2>Live stress</h2>
             <div class="gauge" data-size="lg"></div>
             <div class="chips" id="signal-chips"></div>
+            <p class="muted small" id="score-source"></p>
             <p class="body-score">Without headset (heart + face): <b data-live="stress-body">—</b></p>
             <p class="body-score" id="personal-score" hidden title="Ridge regression trained on your calibration: heart + face predict your EEG stress">Your personal model (heart + face): <b>—</b></p>
             <p class="body-score" id="ml-score-headset" hidden>Trained model with headset (brain): <b>—</b></p>
