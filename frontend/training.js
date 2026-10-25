@@ -126,7 +126,6 @@
 
   function renderResults(rep) {
     SERIES.headset.key = `label:${rep.with_headset || "brain"}`;
-    const live = rep.live_model || "teacher";
     const res = (k) => rep.results[SERIES[k].key] || {};
     const secs = rep.seconds || {};
     const kpi = (k, v, s, color) => `<div class="tr-kpi"><div class="k">${color ? `<i style="background:${color}"></i>` : ""}${k}</div>
@@ -134,10 +133,6 @@
     el("tr-kpis").innerHTML =
       kpi("With headset · live", fmtAuc(res("headset").auc),
         `${HEADSET_SETS[rep.with_headset] || "brain"}, AUC on unseen data`, SERIES.headset.color) +
-      kpi(rep.live_model ? "Without headset · live" : "Without headset (not installed)", fmtAuc(res(live).auc),
-        `heart + face, ${live === "teacher" ? "taught by the brain" : "label model"}, AUC on unseen data`, SERIES[live].color) +
-      kpi("Brain → body, shared model", res("teacher").imitation_r == null ? "—" : `r ${res("teacher").imitation_r.toFixed(2)}`,
-        "one heart + face model for everyone, on people it never saw. Your personal one is in the Live panel.") +
       kpi("Training data", fmtTime((secs.rest || 0) + (secs.stress || 0)),
         `${rep.sessions.length} session${rep.sessions.length > 1 ? "s" : ""} · tested by ${rep.validation.replace(/ \(.*\)/, "")}`);
 
