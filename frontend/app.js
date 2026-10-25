@@ -34,38 +34,45 @@ const FACE_LABELS = {
 };
 const FACE_KEYS = Object.keys(FACE_LABELS);
 const isFaceKey = (k) => FACE_KEYS.includes(k);
-const EEG_KEYS = ["alpha_TP9", "alpha_AF7", "alpha_AF8", "alpha_TP10"];
+const EEG_SENSORS = ["TP9", "AF7", "AF8", "TP10"], EEG_BANDS = ["theta", "alpha", "beta"];
+const EEG_KEYS = EEG_SENSORS.flatMap((ch) => EEG_BANDS.map((b) => `${b}_${ch}`));
 const SIGNAL_GROUPS = { Brain: EEG_KEYS, Heart: ["hr", "hrv"], Face: FACE_KEYS };
 const groupOf = (k) => Object.keys(SIGNAL_GROUPS).find((g) => SIGNAL_GROUPS[g].includes(k));
-// Brain card of the calibration profile: one sensor per row + a top view of the head coloured by response
+// Brain card of the calibration profile: one sensor per row, theta / alpha / beta in the person's IAF bands,
+// with the direction each one moved under stress (learned per person), + a top view of the head
 function brainCard(sig, cal) {
-  const rows = EEG_KEYS.filter((k) => sig[k]).map((k) => {
-    const s = sig[k], used = cal && cal.used.includes(k), ch = k.slice(6);
-    const change = s.rest != null && s.stress != null ? Math.round((Math.pow(10, s.stress - s.rest) - 1) * 100) : null;
-    const muscle = (s.dropped || {}).muscle || 0;
-    return `<tr><td>${ch}</td><td>${change == null ? "—" : (change > 0 ? "+" : "") + change + "%"}</td>
-      <td>${s.effect != null ? s.effect.toFixed(2) : "—"}</td><td class="${used ? "better" : "worse"}">${used ? "✓" : "✗"}</td>
-      <td class="muted" title="Share of windows thrown out because of forehead or jaw muscle tension">${muscle ? `${muscle}% muscle` : ""}</td></tr>`;
-  }).join("");
-  const color = (k) => {
+  const used = (k) => !!(cal && cal.used.includes(k));
+  const cell = (k) => {
     const s = sig[k];
-    if (!s || s.effect == null) return "var(--border)";
-    if (cal && cal.used.includes(k)) return "var(--good)";
-    return s.effect <= -0.2 ? "var(--bad)" : "var(--fair)";
+    if (!s || s.effect == null) return `<td class="muted">—</td>`;
+    const arrow = s.direction > 0 ? "↑" : "↓";
+    return `<td class="${used(k) ? "better" : "muted"}" title="${(s.note || "").replace(/"/g, "&quot;")} · Cohen's d ${s.effect.toFixed(2)}">${arrow} ${s.effect.toFixed(1)}${used(k) ? " ✓" : ""}</td>`;
   };
-  const pos = { alpha_AF7: [42, 32], alpha_AF8: [78, 32], alpha_TP9: [17, 88], alpha_TP10: [103, 88] };
-  const dots = EEG_KEYS.map((k) => {
-    const [x, y] = pos[k], s = sig[k];
-    return `<circle cx="${x}" cy="${y}" r="9" fill="${color(k)}"/><text x="${x}" y="${y < 60 ? y - 13 : y + 21}"
-      text-anchor="middle">${k.slice(6)}</text>`;
+  const shown = EEG_SENSORS.filter((ch) => EEG_BANDS.some((b) => sig[`${b}_${ch}`]));
+  const rows = shown.map((ch) => `<tr><td>${ch}</td>${EEG_BANDS.map((b) => cell(`${b}_${ch}`)).join("")}</tr>`).join("");
+  // share of windows thrown out because of forehead or jaw muscle tension
+  const muscle = shown.map((ch) => [ch, Math.max(0, ...EEG_BANDS.map((b) => ((sig[`${b}_${ch}`] || {}).dropped || {}).muscle || 0))])
+    .filter(([, pct]) => pct > 0).map(([ch, pct]) => `${ch} ${pct}%`).join(", ");
+  const color = (ch) => {
+    const keys = EEG_BANDS.map((b) => `${b}_${ch}`).filter((k) => sig[k] && sig[k].effect != null);
+    if (!keys.length) return "var(--border)";
+    return keys.some(used) ? "var(--good)" : "var(--fair)";
+  };
+  const dots = EEG_SENSORS.map((ch) => {
+    const [x, y] = SENSOR_POS[ch];
+    return `<circle cx="${x}" cy="${y}" r="9" fill="${color(ch)}"/><text x="${x}" y="${y < 60 ? y - 13 : y + 21}"
+      text-anchor="middle">${ch}</text>`;
   }).join("");
   const head = `<svg viewBox="0 0 120 135" class="mini-head"><path class="skull" d="M60 12 l-7 9 h14 z"/>
     <ellipse class="skull" cx="11" cy="74" rx="6" ry="12"/><ellipse class="skull" cx="109" cy="74" rx="6" ry="12"/>
     <ellipse class="skull" cx="60" cy="72" rx="46" ry="54"/>${dots}</svg>`;
-  return `<div class="sig-card"><h3>Brain · alpha power per sensor</h3>
-    <div class="muted small">baseline → stress test (alpha should drop), Cohen's d</div>
-    <div class="brain-row">${head}<table class="mini">${rows || "<tr><td>not enough clean signal</td></tr>"}</table></div>
-    <p class="muted small">Green: used · orange: too small · red: changed the opposite way</p></div>`;
+  const iaf = cal && cal.iaf ? ` · your alpha frequency ${cal.iaf.toFixed(1)} Hz` : "";
+  return `<div class="sig-card"><h3>Brain · per sensor and band</h3>
+    <div class="muted small">how each band moved under stress (↑ / ↓), Cohen's d${iaf}</div>
+    <div class="brain-row">${head}<table class="mini"><tr class="muted"><td></td><td>θ</td><td>α</td><td>β</td></tr>
+      ${rows || "<tr><td>not enough clean signal</td></tr>"}</table></div>
+    ${muscle ? `<p class="muted small">Windows removed for muscle tension: ${muscle}</p>` : ""}
+    <p class="muted small">Green: the sensor feeds the score (✓ bands with d ≥ 0.5) · orange: no band reacted enough</p></div>`;
 }
 
 const $ = (id) => document.getElementById(id);

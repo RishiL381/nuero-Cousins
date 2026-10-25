@@ -66,7 +66,7 @@ The page has four steps, shown top to bottom. A step turns green when it is done
 **What happens at the end**
 - The app computes the calibration report:
   - per signal, the change from baseline to stress test and whether it is used (Cohen's d ≥ 0.5);
-  - the brain map per sensor, with the share of windows rejected for muscle tension;
+  - the brain map: theta, alpha and beta per sensor, in bands set on the person's alpha frequency (shown), with the direction each moved and ✓ when it feeds the score, plus the share of windows removed for muscle tension;
   - the **calibration check**: anchors set on the first half, tested on the second half. "Redo recommended" means the calibration did not separate calm and stress clearly.
 - Riley's **personal model** (heart + face imitating the EEG) is trained on this calibration, then retrained with the study blocks.
 

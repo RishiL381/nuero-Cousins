@@ -94,6 +94,14 @@ def features_from(x: dict, iaf: float) -> dict:
     return out
 
 
+def brain_values(x: dict, iaf: float) -> dict:
+    """Brain signals of the live calibration rule, {band}_{channel} (theta, alpha, beta in IAF bands), only
+    for the channels that are clean this moment."""
+    f = features_from(x, iaf)
+    return {f"{b}_{ch}": f[f"{b}_iaf_{ch}"] for ch in EEG_CHANNELS for b in ("theta", "alpha", "beta")
+            if f[f"{b}_iaf_{ch}"] is not None}
+
+
 def to_vector(row: dict, names=ALL_FEATURES) -> np.ndarray:
     return np.array([np.nan if row.get(k) is None else float(row[k]) for k in names])
 

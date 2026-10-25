@@ -11,7 +11,7 @@ import numpy as np
 from scipy import signal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from clutch.engine import Config, Engine, StressModel  # noqa: E402
+from clutch.engine import GROUPS, Config, Engine, StressModel  # noqa: E402
 from clutch.learned import LiveScorer  # noqa: E402
 from clutch.processing import eeg_features, heart_rate  # noqa: E402
 from clutch.sources import MockSource  # noqa: E402
@@ -70,7 +70,7 @@ def test_stress_score_follows_phases():
                          ("round1", 60), ("reset", 60), ("round2", 60)])
     cal = eng.model.calibration
     assert cal is not None and cal["mode"] == "anchored", cal
-    eeg = {"alpha_TP9", "alpha_AF7", "alpha_AF8", "alpha_TP10"}
+    eeg = set(GROUPS["brain"])  # theta, alpha, beta per channel
     # the heart and most channels respond (simulated blinks add noise on the forehead channels, as in real data)
     assert "hr" in cal["used"] and len(eeg & set(cal["used"])) >= 3, cal["used"]
     print("calibration:", {k: (v["note"], round(v["effect"], 2), v.get("recovered_pct")) for k, v in cal["signals"].items()})

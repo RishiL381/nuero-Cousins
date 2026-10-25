@@ -76,7 +76,14 @@ Two presets are available: **Standard** (recommended) and **Short** (for live de
 - **Channels:** TP9, AF7, AF8, TP10.
 - **Preprocessing:** band-pass 1–45 Hz and a 60 Hz notch, on 4-second windows updated every 0.5 s.
 - **Band power:** Welch's averaged-periodogram method (Welch, 1967), integrated over theta (4–8 Hz), alpha (8–12 Hz) and beta (13–30 Hz).
-- **Feature: alpha power per channel.** For each of the four channels, `log10` of the absolute alpha power (µV²). Each channel is compared **with itself** between baseline and stressor, and only in windows where that channel has acceptable contact.
+- **Features: theta, alpha and low-beta power per channel.** For each of the four channels, `log10` of the absolute power (µV²) in bands set on the person's individual alpha frequency, which is measured on the calibration rest (see *Bands* below). Each channel and band is compared **with itself** between baseline and stressor. Only windows where that channel has acceptable contact, no head motion and no muscle tension are used.
+- **Direction learned per person:** the calibration keeps each band whose change has |d| ≥ 0.5, in whichever direction it moved. On P01 session 2, alpha *rose* under stress on most channels. The former rule ("alpha must drop", fixed 8–12 Hz) kept no EEG signal at all.
+  - Rule variants built on the session 2 calibration and judged on its study blocks (unseen):
+    - fixed alpha, must drop: no signal, EEG unused (even with d ≥ 0.2);
+    - IAF alpha, must drop: 0.26;
+    - IAF alpha, learned direction: 0.75;
+    - **IAF theta + alpha + beta, learned direction: 0.86**. This is the current rule, and as good as the trained brain model.
+  - Learning the direction can pick up noise: the calibration check (first half vs second half) is the safeguard.
 - **Why alpha, and not alpha/beta:**
   - in a meta-analysis of spectral EEG studies of psychosocial stress, alpha power decreased consistently (Hedges' g = 0.6, p = 0.001), while beta showed no significant pooled effect (g = −0.31, p = 0.29) and frontal alpha asymmetry no effect (Vanhollebeke et al., 2022);
   - alpha oscillations track cognitive state and performance (Klimesch, 1999); frontal alpha decreases under mental arithmetic stress (Al-Shargie et al., 2016).
@@ -99,7 +106,7 @@ Two presets are available: **Standard** (recommended) and **Short** (for live de
 - **Methodological guidance:** heart rate variability (HRV) is a stronger marker but needs cleaner recordings; we follow the recommendations of Laborde et al. (2017) for any future HRV work.
 
 ### Decision rule
-For each signal (each EEG channel, heart rate, each face indicator) we compute **Cohen's d** between the stressor and baseline samples, signed so that a positive value means the expected direction: alpha down, heart rate up. For face indicators with no established direction (smile, blink rate), the direction is learned from the calibration.
+For each signal (each EEG channel, heart rate, each face indicator) we compute **Cohen's d** between the stressor and baseline samples, signed so that a positive value means the expected direction: heart rate up, face tension up. For EEG bands and for face indicators with no established direction (smile, blink rate), the direction is learned from the calibration.
 
 | d | Label (Cohen, 1988) | Used? |
 |---|---|---|
