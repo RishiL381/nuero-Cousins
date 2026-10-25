@@ -29,7 +29,7 @@ We wanted a public dataset recorded **with a Muse** (same 4 sensors) with **hear
 alpha), the heart signal is a clean wrist sensor (ours is the Muse forehead sensor), and their calm state is a
 relaxation *video*. We use it to build and test the pipeline and as extra training data, not as the final answer.
 
-## 3. Stress model pipeline (code in `ml/`, currently only on Riley's laptop)
+## 3. Stress model pipeline (code in `ml/`, setup in `ml/README.md`)
 
 - **Features**, one row per 10 s window (5 s step): EEG relative band power per sensor (delta..gamma),
   log(alpha/beta), frontal alpha asymmetry, heart rate and HRV from the pulse wave, head motion.
@@ -105,7 +105,7 @@ participants). Blocks are 3 min (or 2 min). Everything is one recorded session; 
 - Keep still while answering.
 - Calibrate with the same stressor you will demo.
 
-**Then one command** (needs the `ml/` code):
+**Then one command** (setup: `ml/README.md`):
 ```bash
 python tools/export_dataset.py --no-zip
 python ml/run.py dataset_export --cal-seconds 60
@@ -119,9 +119,8 @@ look at the results; 2-3 demo and slides, no code changes after 2. Pre-calibrate
 judges arrive and only go on stage once their flip check passes.
 
 ## 7. Open items
-- **`ml/` code is not in the repo yet** (Riley's laptop). Ask Riley to push it if you want to run or change it.
-- **P01's raw files are missing from the repo:** `.gitignore` has `sessions/`, which also matches
-  `data/clutch_dataset/sessions/`. Change it to `/sessions/` and add the folder, so raw EEG and pulse are shared.
+- **P01's raw files are missing from the repo:** `.gitignore` used to have `sessions/`, which also matched
+  `data/clutch_dataset/sessions/`. It is now `/sessions/`: add that folder so raw EEG and pulse are shared.
 - **Garmin live heart rate** (optional): if the watch has "Broadcast Heart Rate" over Bluetooth, a small reader
   could feed it to the app. Otherwise we use the Muse pulse sensor plus EEG.
 - Face features are not in the stress model yet: a good "next step" for the pitch.
