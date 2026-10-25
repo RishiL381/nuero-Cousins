@@ -76,7 +76,7 @@ def window(t, x, t_end, seconds, fs):
     return x[:, a:b] if b - a >= 0.85 * seconds * fs else None
 
 
-def session_rows(sdir: Path, notch_hz: float):
+def session_rows(sdir: Path, notch_hz: float, session_id: str | None = None):
     """One row per second of every phase (label NaN where the phase is unlabelled), holding the raw inputs
     (spectra, heart, face) in column "inputs"; features are computed in normalise() once the IAF is known."""
     meta = json.loads((sdir / "meta.json").read_text())
@@ -108,10 +108,31 @@ def session_rows(sdir: Path, notch_hz: float):
                 recent = face[(face["t"] <= tt) & (face["t"] > tt - 2)]
                 if len(recent):
                     f = {c: (None if pd.isna(v) else v) for c, v in recent.iloc[-1].to_dict().items()}
-            rows.append({"participant": meta.get("participant", sdir.name), "session": sdir.name, "t": float(tt),
+            rows.append({"participant": meta.get("participant", sdir.name), "session": session_id or sdir.name, "t": float(tt),
                          "phase": ph["phase"], "label": float(ph["label"]) if ph["label"] != "" else np.nan,
                          "block": k, "since_start": float(tt - t0), "inputs": row_inputs(feats, hr, motion, f)})
     return rows
+
+
+def collect_sessions(folders: list[Path]) -> list[tuple[str, Path]]:
+    """(session id, folder) for every session of the given datasets, each recording once: a session exported
+    both here and in the team dataset has the same start time. Ids are made unique if two datasets reuse one."""
+    seen, out = set(), []
+    for folder in folders:
+        for d in sorted((folder / "sessions").iterdir() if (folder / "sessions").exists() else []):
+            if not (d / "labels.csv").exists():
+                continue
+            meta = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
+            key = meta.get("started_at") or f"{folder}/{d.name}"
+            if key in seen:
+                continue
+            seen.add(key)
+            sid = d.name
+            while sid in {s for s, _ in out}:
+                sid += "b"
+            out.append((sid, d))
+    print(f"{len(out)} sessions from {', '.join(str(f) for f in folders)}")
+    return out
 
 
 def normalise(df: pd.DataFrame) -> pd.DataFrame:
@@ -243,14 +264,15 @@ def evaluate(df, kind, features, importance=False, train_frac=1.0):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--data", default=str(ROOT / "data" / "clutch_dataset"), help="exported dataset folder")
+    p.add_argument("--data", action="append", help="exported dataset folder; repeat it to combine several "
+                   "(default: data/clutch_dataset). A session found in several folders is used once.")
     p.add_argument("--notch", type=float, default=60.0, help="mains frequency (60 Hz US, 50 Hz Europe)")
     p.add_argument("--save", help="folder to save the trained models into (e.g. models)")
     args = p.parse_args()
 
-    sdirs = sorted(d for d in (Path(args.data) / "sessions").iterdir() if (d / "labels.csv").exists())
+    sdirs = collect_sessions([Path(d) for d in (args.data or [ROOT / "data" / "clutch_dataset"])])
     print("Computing features from the raw files...")
-    df = normalise(pd.DataFrame([r for d in sdirs for r in session_rows(d, args.notch)]))
+    df = normalise(pd.DataFrame([r for sid, d in sdirs for r in session_rows(d, args.notch, sid)]))
     df["block_pos"] = df.groupby(["session", "block"])["t"].rank(pct=True)
     lab = df["label"]
     validation = ("leave-one-participant-out" if df["participant"].nunique() >= 2 else

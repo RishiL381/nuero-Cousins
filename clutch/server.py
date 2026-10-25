@@ -187,7 +187,9 @@ def create_app(engine: Engine) -> FastAPI:
             engine.learned = LiveScorer.load(MODELS / "headset_free.joblib")
             engine.learned_headset = LiveScorer.load(MODELS / "with_headset.joblib")
 
-        args = ["tools/train_model.py", "--data", str(DATASET), "--save", str(MODELS), "--notch", str(engine.cfg.notch_hz)]
+        team = ROOT / "data" / "clutch_dataset"  # the team's dataset (sessions from other computers), in the repo
+        args = ["tools/train_model.py", "--data", str(DATASET), *(["--data", str(team)] if team.exists() else []),
+                "--save", str(MODELS), "--notch", str(engine.cfg.notch_hz)]
         if not jobs.start("train", args, on_done=reload_model):
             return JSONResponse({"error": "Another step is still running."}, status_code=409)
         return {"started": True}

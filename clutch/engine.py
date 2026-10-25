@@ -659,15 +659,16 @@ class Engine:
             # EEG; without the headset, the personal model from this calibration, the trained heart + face model,
             # else the calibration rule on heart + face.
             # Two scores, the pitch in one panel:
-            #   brain = the teacher: the trained brain model when installed (tested across people), else the EEG
-            #           part of this calibration; only while the headset streams.
+            #   brain = the teacher: the EEG part of this person's calibration, which the student learned from (so
+            #           the two curves are comparable); the shared trained brain model only when there is none.
+            #           Only while the headset streams.
             #   body  = the student: heart + face. The personal model, trained at the end of this calibration to
             #           follow the EEG; else the trained heart + face model; else the calibration rule.
             # The main score is the brain while the headset is on, the student once it is off.
             headset_on = eeg is not None and feats.get("usable", 0) > 0
             brain_score, brain_src = next(((v, n) for v, n in (
-                (ml_headset if headset_on else None, "trained brain model"),
-                (self.model.brain_rule if headset_on else None, "your calibration (EEG)")) if v is not None), (None, None))
+                (self.model.brain_rule if headset_on else None, "your calibration (EEG)"),
+                (ml_headset if headset_on else None, "shared trained brain model")) if v is not None), (None, None))
             body_score, body_src = next(((v, n) for v, n in (
                 (personal, "personal model, taught by your EEG"),
                 (ml, "trained heart + face model"),

@@ -19,25 +19,6 @@
     }
   },
   {
-    "trained_at": "2026-10-25 10:53",
-    "sessions": 1,
-    "seconds": {
-      "rest": 135,
-      "stress": 117,
-      "unlabelled": 117
-    },
-    "validation": "5 time blocks within the session (weak: same session)",
-    "live_model": "label",
-    "auc": {
-      "label:full": 0.769,
-      "label:headset_free": 0.808,
-      "label:eeg": 0.746,
-      "label:face": 0.782,
-      "label:heart": 0.933,
-      "teacher:headset_free": 0.657
-    }
-  },
-  {
     "trained_at": "2026-10-25 11:32",
     "sessions": 1,
     "seconds": {
@@ -118,6 +99,28 @@
       "label:face": 0.382,
       "label:heart": 0.373,
       "teacher:headset_free": 0.395
+    }
+  },
+  {
+    "trained_at": "2026-10-25 14:32",
+    "sessions": 4,
+    "seconds": {
+      "rest": 893,
+      "stress": 1175,
+      "unlabelled": 821
+    },
+    "validation": "leave-one-participant-out",
+    "live_model": "label",
+    "with_headset": "brain",
+    "auc": {
+      "label:full": 0.379,
+      "label:headset": 0.817,
+      "label:brain": 0.829,
+      "label:muscle": 0.687,
+      "label:headset_free": 0.353,
+      "label:face": 0.371,
+      "label:heart": 0.359,
+      "teacher:headset_free": 0.329
     }
   }
 ]

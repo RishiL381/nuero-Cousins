@@ -45,7 +45,7 @@ def test_export():
         record(tmp / "sessions", "Bob", consent=False)   # must be skipped
         out = tmp / "export"
         res = subprocess.run([sys.executable, str(ROOT / "tools" / "export_dataset.py"),
-                              "--sessions", str(tmp / "sessions"), "--out", str(out)],
+                              "--sessions", str(tmp / "sessions"), "--out", str(out), "--team", str(tmp / "no_team")],
                              capture_output=True, text=True)
         print(res.stdout.strip())
         assert res.returncode == 0, res.stderr

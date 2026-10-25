@@ -136,8 +136,8 @@
         `${HEADSET_SETS[rep.with_headset] || "brain"}, AUC on unseen data`, SERIES.headset.color) +
       kpi(rep.live_model ? "Without headset · live" : "Without headset (not installed)", fmtAuc(res(live).auc),
         `heart + face, ${live === "teacher" ? "taught by the brain" : "label model"}, AUC on unseen data`, SERIES[live].color) +
-      kpi("Brain → body", res("teacher").imitation_r == null ? "—" : `r ${res("teacher").imitation_r.toFixed(2)}`,
-        "how well heart + face reproduce the brain model's estimate (1 = perfectly)") +
+      kpi("Brain → body, shared model", res("teacher").imitation_r == null ? "—" : `r ${res("teacher").imitation_r.toFixed(2)}`,
+        "one heart + face model for everyone, on people it never saw. Your personal one is in the Live panel.") +
       kpi("Training data", fmtTime((secs.rest || 0) + (secs.stress || 0)),
         `${rep.sessions.length} session${rep.sessions.length > 1 ? "s" : ""} · tested by ${rep.validation.replace(/ \(.*\)/, "")}`);
 
@@ -292,7 +292,13 @@
   }
 
   function drawHistory() {
-    const hist = data.history || [], box = el("ch-history");
+    // Only trainings tested the same way as the latest one are comparable (within a session, on a new session,
+    // on a new person: each is harder than the one before), so the chart shows those.
+    const all = data.history || [], box = el("ch-history");
+    const kind = (h) => (h.validation || "").replace(/ \(.*\)/, "").replace(/^\d+ time blocks.*/, "time blocks");
+    const latest = all.length ? kind(all[all.length - 1]) : null;
+    const hist = all.filter((h) => kind(h) === latest);
+    const hidden = all.length - hist.length;
     if (!hist.length) { box.innerHTML = ""; return; }
     const W = width("ch-history"), H = 190, l = 64, r = W - 110, t = 10, b = H - 26;
     const get = (h, k) => (h.auc || {})[k === "headset" ? `label:${h.with_headset || "brain"}` : SERIES[k].key];
@@ -319,9 +325,9 @@
     }
     g += endLabels(ends, r + 10);
     box.innerHTML = svg(W, H, g) + legend(["headset", "label", "teacher"]);
-    el("ch-history-note").textContent = n < 2
-      ? "Each training adds a point here. Record more sessions and train again to see the model improve."
-      : "Each point is one training. Scores tested on new sessions or new people are lower but more honest than within one session.";
+    el("ch-history-note").textContent = `Trainings tested by ${latest}` +
+      (hidden ? ` (${hidden} earlier training${hidden > 1 ? "s" : ""} tested an easier way are not shown).` : ".") +
+      (n < 2 ? " Each new training tested the same way adds a point." : "");
   }
 
   // ---------- Tooltip ----------

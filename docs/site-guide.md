@@ -83,7 +83,7 @@ The page has four steps, shown top to bottom. A step turns green when it is done
 
 | Element | What it shows |
 |---|---|
-| **Brain (EEG)**, the teacher | the trained brain model when one is installed (tested across people), else the EEG part of your calibration. Only while the headset streams. |
+| **Brain (EEG)**, the teacher | the EEG part of your calibration: the teacher your heart + face model learned from, so the two curves can be compared. The shared trained brain model is used only when there is no calibration teacher. Only while the headset streams. |
 | **Heart + face**, the student | your **personal model**: at the end of your calibration it learns the weights that bring heart + face as close as possible to your EEG. Retrained after the study blocks. Fallbacks: the trained heart + face model, then the calibration rule. |
 | **Gauge** | the brain while the headset is on; the student once it is off |
 | **"Heart + face follows the brain: r = …"** | correlation of the two scores over the last 2 minutes. 1 = identical curves. Above 0.6, the watch and webcam can stand in for the headset. |
@@ -117,9 +117,11 @@ The page has four steps, shown top to bottom. A step turns green when it is done
 
 1. **Build dataset:**
    - gathers every session recorded with consent;
-   - replaces codes with P01, P02… The mapping stays on this computer;
+   - replaces names with P01, P02… The mapping stays on this computer (`dataset_export_mapping.json`).
+   - Codes are stable from one export to the next and ignore capitals and spaces: "Clément" and "clément" are the same person.
+   - A new person never gets a code already used in the team dataset (`data/clutch_dataset`), which holds sessions from other computers;
    - writes `dataset_export/` and a zip to send.
-2. **Train model:** runs `tools/train_model.py` and shows its output live. It takes about 1–2 minutes per session. As soon as it ends, the new models run in the app, without a restart.
+2. **Train model:** runs `tools/train_model.py` on this computer's export **and** the team dataset in the repository. A session present in both is used once. The output is shown live. It takes about 1–2 minutes per session. As soon as it ends, the new models run in the app, without a restart.
 
 **What is trained** (gradient-boosted trees, scikit-learn)
 

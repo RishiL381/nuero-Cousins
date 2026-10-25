@@ -43,6 +43,29 @@ def remove_tree(path):
         shutil.rmtree(path, onerror=retry)
 
 
+def person_key(name) -> str:
+    """One person, one code: "Clément", "clément " and "CLÉMENT" are the same participant."""
+    return " ".join(str(name).split()).casefold() or "anon"
+
+
+def load_mapping(path: Path) -> dict:
+    """The name -> code table of earlier exports on this computer, so codes never change between exports."""
+    try:
+        old = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):  # missing, or written by an older version in another encoding
+        return {}
+    out = {}
+    for name, code in sorted(old.items(), key=lambda kv: kv[1]):  # if two spellings had two codes, keep the first
+        out.setdefault(person_key(name), code)
+    return out
+
+
+def team_codes(team: Path) -> set:
+    """Codes already used in the team dataset in the repository (sessions recorded on other computers)."""
+    table = team / "sessions.csv"
+    return {r["participant"] for r in read_csv(table)} if table.exists() else set()
+
+
 def read_csv(path):
     if not path.exists():
         return []
@@ -76,6 +99,8 @@ def main():
     p.add_argument("--sessions", default=str(ROOT / "sessions"))
     p.add_argument("--out", default=str(ROOT / "dataset_export"))
     p.add_argument("--no-zip", action="store_true")
+    p.add_argument("--team", default=str(ROOT / "data" / "clutch_dataset"),
+                   help="team dataset whose participant codes new people must not reuse")
     args = p.parse_args()
 
     sessions_dir, out = Path(args.sessions), Path(args.out)
@@ -83,8 +108,10 @@ def main():
         remove_tree(out)
     (out / "sessions").mkdir(parents=True)
 
-    mapping, rows_all, table = {}, [], []
-    skipped = []
+    mapping_path = out.parent / "dataset_export_mapping.json"
+    mapping = load_mapping(mapping_path)
+    taken = set(mapping.values()) | team_codes(Path(args.team))
+    rows_all, table, skipped = [], [], []
     for sdir in sorted(d for d in sessions_dir.iterdir() if d.is_dir()) if sessions_dir.exists() else []:
         meta_path = sdir / "meta.json"
         if not meta_path.exists():
@@ -98,8 +125,11 @@ def main():
         if not metrics:
             skipped.append(f"{sdir.name} (empty)")
             continue
-        who = str(meta.get("participant", "anon"))
-        code = mapping.setdefault(who, f"P{len(mapping) + 1:02d}")
+        who = person_key(meta.get("participant", "anon"))
+        if who not in mapping:  # a new person: the next free code, after every code used here or in the team dataset
+            mapping[who] = f"P{max([int(c[1:]) for c in taken if c[1:].isdigit()] + [0]) + 1:02d}"
+            taken.add(mapping[who])
+        code = mapping[who]
         session_id = f"{code}_S{sum(1 for r in table if r['participant'] == code) + 1:02d}"
 
         intervals = phase_intervals(events, float(metrics[-1]["t"]) + 0.5)
@@ -153,10 +183,10 @@ def main():
         w.writerows(table)
     shutil.copy2(ROOT / "docs" / "dataset.md", out / "README.md")
     shutil.copy2(ROOT / "docs" / "methods.md", out / "methods.md")
-    (out.parent / "dataset_export_mapping.json").write_text(json.dumps(mapping, indent=2))  # stays local, not zipped
+    mapping_path.write_text(json.dumps(mapping, indent=2, ensure_ascii=False), encoding="utf-8")  # stays local, not zipped
 
     n_lab = sum(1 for r in rows_all if r["label"] != "")
-    print(f"Exported {len(table)} sessions from {len(mapping)} participants -> {out}")
+    print(f"Exported {len(table)} sessions from {len({r['participant'] for r in table})} participants -> {out}")
     print(f"features.csv: {len(rows_all)} rows (0.5 s each), {n_lab} labelled (0 = rest, 1 = stress)")
     for r in table:
         print(f"  {r['session']}: rest {r['rest_s']} s, stress {r['stress_s']} s, face={r['has_face']}, "
