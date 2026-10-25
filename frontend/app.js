@@ -27,7 +27,7 @@ const STRESS_BINS = [
   { key: "mid", label: "Moderate", range: "35–65", lo: 35, hi: 65 },
   { key: "high", label: "High stress", range: "65+", lo: 65, hi: Infinity },
 ];
-const SIGNAL_NAMES = { eeg: "Brain", hr: "Heart" };
+const SIGNAL_NAMES = { eeg: "Brain", hr: "Heart", hrv: "Heart rate variability" };
 const FACE_LABELS = {
   face_brow: "Brows lowered", face_press: "Lips pressed", face_squint: "Eyes squinted", face_frown: "Frown",
   face_smile: "Smile", blink_rate: "Blinks / min", head_motion: "Head motion",
@@ -35,7 +35,7 @@ const FACE_LABELS = {
 const FACE_KEYS = Object.keys(FACE_LABELS);
 const isFaceKey = (k) => FACE_KEYS.includes(k);
 const EEG_KEYS = ["alpha_TP9", "alpha_AF7", "alpha_AF8", "alpha_TP10"];
-const SIGNAL_GROUPS = { Brain: EEG_KEYS, Heart: ["hr"], Face: FACE_KEYS };
+const SIGNAL_GROUPS = { Brain: EEG_KEYS, Heart: ["hr", "hrv"], Face: FACE_KEYS };
 const groupOf = (k) => Object.keys(SIGNAL_GROUPS).find((g) => SIGNAL_GROUPS[g].includes(k));
 // Brain card of the calibration profile: one sensor per row + a top view of the head coloured by response
 function brainCard(sig, cal) {
@@ -199,9 +199,27 @@ function updateHeadset(src) {
   $("hs-disconnect").disabled = !active;
 }
 
+// ---------- Watch (Garmin or any Bluetooth heart rate device) ----------
+function updateWatch(w, hr) {
+  if (!w) return;
+  const cls = { streaming: w.bpm != null ? "ok" : "busy", searching: "busy", connecting: "busy", error: "err" }[w.state] || "";
+  $("watch-dot").className = `hs-dot ${cls}`;
+  $("watch-text").textContent = w.state === "streaming" && w.bpm == null ? `${w.message} · waiting for heart rate…` : w.message;
+  $("watch-bpm").textContent = w.bpm != null ? `${w.bpm} bpm` : "—";
+  $("watch-hrv").textContent = w.rmssd != null ? `${w.rmssd} ms` : w.state === "streaming" && !w.rr
+    ? "not sent by this device" : "—";
+  $("watch-used").textContent = hr && hr.source === "watch" ? "✓ watch (replaces the Muse sensor)"
+    : hr && hr.source === "muse" ? "Muse forehead sensor" : "—";
+  const on = ["searching", "connecting", "streaming"].includes(w.state);
+  $("watch-connect").disabled = on;
+  $("watch-connect").textContent = w.state === "error" ? "Retry" : "Connect watch";
+  $("watch-disconnect").disabled = w.state === "off";
+}
+
 // ---------- Live widgets ----------
 function updateLive(m, hr) {
   updateHeadset(m.source);
+  updateWatch(m.watch, m.hr);
   updateSteps(m);
   if (presentOpen()) updatePresent(m);
   const s = m.stress == null ? null : Math.round(m.stress);
@@ -959,7 +977,9 @@ function renderCalibrationReport(cal, extra) {
   }
   $("report-signals").innerHTML = checkCard +
     brainCard(sig, cal) +
-    card("hr", "Heart rate", (v) => Math.round(v), " bpm") + faceCard + bodyCard + selfCard;
+    card("hr", "Heart rate", (v) => Math.round(v), " bpm") +
+    (sig.hrv ? card("hrv", "Heart rate variability (RMSSD)", (v) => Math.round(v), " ms") : "") +
+    faceCard + bodyCard + selfCard;
 
   let lead, summary;
   if (!cal || !cal.ok) {
@@ -1383,6 +1403,9 @@ $("cam-toggle").onclick = async () => {
 $("hs-connect").onclick = () => send({ type: "headset_connect", name: $("hs-name").value.trim() });
 $("hs-disconnect").onclick = () => send({ type: "headset_disconnect" });
 $("hs-name").onkeydown = (e) => { if (e.key === "Enter") $("hs-connect").click(); };
+$("watch-connect").onclick = () => send({ type: "watch_connect", name: $("watch-name").value.trim() });
+$("watch-disconnect").onclick = () => send({ type: "watch_disconnect" });
+$("watch-name").onkeydown = (e) => { if (e.key === "Enter") $("watch-connect").click(); };
 $("btn-calibrate").onclick = () => calibrateOnly();
 $("btn-study").onclick = () => runStudy();
 $("btn-widget").onclick = () => openWidget();

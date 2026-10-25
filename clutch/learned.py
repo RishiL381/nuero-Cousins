@@ -23,7 +23,7 @@ LABELS = {"calib_rest": 0, "calib_stress": 1, "study_relax": 0, "study_math_hard
 EEG_CHANNELS = ("TP9", "AF7", "AF8", "TP10")
 EEG_FEATURES = [f"{b}log_{ch}" for ch in EEG_CHANNELS for b in ("theta", "alpha", "beta")]
 FACE_FEATURES = ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"]
-HEART_FEATURES = ["hr"]
+HEART_FEATURES = ["hr", "hrv"]  # hrv: RMSSD from a watch or strap, when it sends beat-to-beat intervals
 ALL_FEATURES = EEG_FEATURES + HEART_FEATURES + FACE_FEATURES
 FEATURE_SETS = {
     "full": EEG_FEATURES + HEART_FEATURES + FACE_FEATURES,   # with the headset (teacher)
@@ -47,6 +47,7 @@ def row_features(eeg_feats: dict, hr: dict, motion: dict, face: dict | None, min
         for b in ("theta", "alpha", "beta"):
             out[f"{b}log_{ch}"] = c.get(f"{b}log") if clean else None
     out["hr"] = hr.get("bpm") if (hr.get("quality") or 0) >= min_hr_quality else None
+    out["hrv"] = hr.get("rmssd")
     for k in FACE_FEATURES:
         out[k] = (face or {}).get(k)
     return out

@@ -35,6 +35,7 @@ import numpy as np
 
 from .learned import LiveScorer, row_features
 from .processing import eeg_features, heart_rate, motion_level
+from .watch import WatchHR
 
 CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose data are collected
 # Expected direction under stress: +1 goes up, -1 goes down, 0 = learned per person from the calibration.
@@ -48,7 +49,7 @@ CALIB_PHASES = ("calib_rest", "calib_stress", "calib_recovery")  # phases whose 
 #   blink_rate   blinks per minute, head_motion: head movement (face widths per second)
 EEG_CHANNELS = ("TP9", "AF7", "AF8", "TP10")
 SIGNALS = {
-    **{f"alpha_{ch}": -1 for ch in EEG_CHANNELS}, "hr": +1,
+    **{f"alpha_{ch}": -1 for ch in EEG_CHANNELS}, "hr": +1, "hrv": -1,
     "face_brow": +1, "face_press": +1, "face_squint": +1, "face_frown": +1, "face_smile": 0,
     "blink_rate": 0, "head_motion": +1,
 }
@@ -56,12 +57,12 @@ SIGNALS = {
 # indicators cannot outvote the heart). Inside a group, signals are averaged weighted by their effect size.
 GROUPS = {
     "brain": [f"alpha_{ch}" for ch in EEG_CHANNELS],
-    "heart": ["hr"],
+    "heart": ["hr", "hrv"],
     "face": ["face_brow", "face_press", "face_squint", "face_frown", "face_smile", "blink_rate", "head_motion"],
 }
 HEADSET_GROUPS = {"brain"}  # left out of the "without headset" score
 HEADSET_SIGNALS = set(GROUPS["brain"])
-MIN_SD = {"hr": 2.0, "blink_rate": 2.0, "head_motion": 0.005, **{s: 0.05 for s in GROUPS["brain"]}}  # brain: log10 units
+MIN_SD = {"hr": 2.0, "hrv": 3.0, "blink_rate": 2.0, "head_motion": 0.005, **{s: 0.05 for s in GROUPS["brain"]}}  # brain: log10 units
 MIN_SD_FACE = 0.02
 
 
@@ -300,7 +301,8 @@ class SessionLogger:
     CHANNEL_COLS = ([f"{b}_{ch}" for ch in CHANNELS for b in ("alpha", "beta", "theta", "gamma", "alphashare", "alphalog")]
                     + [f"q_{ch}" for ch in CHANNELS] + [f"muscle_{ch}" for ch in CHANNELS])
     METRIC_COLS = (["t", "phase", "stress", "stress_body", "stress_ml", "stress_ml_headset", "pos_eeg", "pos_hr", "ratio_log", "alpha", "beta", "theta",
-                    "hr_bpm", "hr_quality", "motion", "usable_channels", "contact"] + FACE_COLS + CHANNEL_COLS)
+                    "hr_bpm", "hr_quality", "hr_source", "hrv_rmssd", "motion", "usable_channels", "contact"]
+                   + FACE_COLS + CHANNEL_COLS)
 
     def __init__(self, root: Path):
         self.root = root
@@ -344,7 +346,7 @@ class SessionLogger:
             self._writers["metrics.csv"].writerow(
                 [m["t"], m["phase"], m["stress"], m.get("stress_body"), m.get("stress_ml"), m.get("stress_ml_headset"), m["z"].get("eeg"), m["z"].get("hr"),
                  eeg.get("ratio_log"), eeg.get("alpha"), eeg.get("beta"), eeg.get("theta"),
-                 hr.get("bpm"), hr.get("quality"), m["motion"].get("level"),
+                 hr.get("bpm"), hr.get("quality"), hr.get("source"), hr.get("rmssd"), m["motion"].get("level"),
                  eeg.get("usable"), contact] + [face.get(k) for k in self.FACE_COLS]
                 + [self._channel(eeg, col) for col in self.CHANNEL_COLS])
             if time.time() - self._flushed > 2:  # keep the files on disk up to date
@@ -369,6 +371,14 @@ class SessionLogger:
         with self._lock:
             if self.active:
                 self._writers["face.csv"].writerow([t, phase] + [features.get(k) for k in self.FACE_COLS])
+
+    def watch(self, t, bpm, rr_ms):
+        """One heart rate notification from the watch: bpm and the beat-to-beat intervals it carried (ms)."""
+        with self._lock:
+            if not self.active:
+                return
+            w = self._writers.get("raw_hr.csv") or self._open("raw_hr.csv", ["t", "bpm", "rr_ms"])
+            w.writerow([round(t, 3), bpm, " ".join(f"{r:.1f}" for r in rr_ms)])
 
     def raw(self, stream: str, lsl_ts, block, t0: float, names):
         """block: (channels, samples) array; lsl_ts: one timestamp per sample (wall clock, seconds)."""
@@ -413,6 +423,8 @@ class Engine:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self.pending_baseline = None  # set when calibration ends, picked up by the server
         self._face, self._face_t = None, 0.0
+        self.watch = WatchHR()  # Garmin or any BLE heart rate device; replaces the Muse PPG while it streams
+        self.watch.on_sample = lambda wall, bpm, rr: self.logger.watch(round(wall - self.t0, 3), bpm, rr)
         if hasattr(source, "on_samples"):
             source.on_samples = self._on_samples  # raw samples go to the session files while recording
 
@@ -474,6 +486,11 @@ class Engine:
         else:
             feats = eeg_features(eeg, src.eeg_fs, src.eeg_names, cfg.notch_hz)
         hr = heart_rate(ppg, src.ppg_fs) if ppg is not None else {"bpm": None, "quality": 0.0}
+        hr["source"] = "muse" if hr.get("bpm") is not None else None
+        watch_bpm = self.watch.latest()
+        if watch_bpm is not None:  # the watch is more reliable than the forehead PPG
+            hr = {"bpm": float(watch_bpm), "quality": 1.0, "source": "watch", "rmssd": self.watch.rmssd(),
+                  "muse_bpm": hr.get("bpm")}
         motion = motion_level(acc)
 
         with self._lock:
@@ -489,7 +506,8 @@ class Engine:
                 alphas[f"alpha_{n}"] = None if why else ch["alphalog"]
                 if why:
                     dropped[f"alpha_{n}"] = why
-            values = {**alphas, "hr": hr["bpm"] if hr["quality"] >= cfg.min_hr_quality else None, **(face or {})}
+            values = {**alphas, "hr": hr["bpm"] if hr["quality"] >= cfg.min_hr_quality else None,
+                      "hrv": hr.get("rmssd"), **(face or {})}
             self.model.collect(self.phase, values, dropped)
             full, body, z = self.model.score(values, cfg.tick_s)
             # Main score: with EEG when the headset streams, otherwise the headset-free score.
@@ -506,7 +524,7 @@ class Engine:
                 "learned_headset": self.learned_headset.info if self.learned_headset else None,
                 "calibrated": self.model.calibration is not None,
                 "z": z, "used": sorted(z), "eeg": feats, "hr": hr, "motion": motion, "face": face,
-                "source": src.status(),
+                "source": src.status(), "watch": self.watch.status(),
             }
             self.latest = m
             self.logger.metric(m)

@@ -28,6 +28,7 @@ sessions/<id>/     raw data per session
     raw_eeg.csv    EEG, 256 Hz: lsl_ts, t, TP9, AF7, AF8, TP10 (microvolts)
     raw_ppg.csv    optical heart sensor, 64 Hz: lsl_ts, t, ppg1, ppg2, ppg3
     raw_accel.csv  accelerometer, 52 Hz: lsl_ts, t, x, y, z (g)
+    raw_hr.csv     watch or chest strap (Bluetooth), each notification: t, bpm, rr_ms (beat-to-beat intervals, space-separated; may be empty)
     face.csv       face indicators, ~1 Hz (columns below)
     events.csv     phase changes, task answers, questionnaires, calibration report (JSON in `data`)
     labels.csv     t_start, t_end, phase, label
@@ -71,7 +72,9 @@ Compare each channel with itself: channels can react in opposite directions, so 
 
 | Column | Meaning |
 |---|---|
-| hr_bpm, hr_quality | heart rate from the Muse PPG over 10 s, with quality from 0 to 1 (use ≥ 0.5) |
+| hr_bpm, hr_quality | heart rate over 10 s, with quality from 0 to 1 (use ≥ 0.5) |
+| hr_source | `watch` (Garmin or Bluetooth strap, quality 1) or `muse` (forehead PPG) |
+| hrv_rmssd | heart rate variability: RMSSD of the beat-to-beat intervals over 30 s (ms), only when the watch sends them |
 | motion | head motion from the accelerometer |
 
 **Face (webcam, 1 s means)**

@@ -80,6 +80,27 @@
             <p class="hint">Start it before calibrating: the face is then calibrated with your heart and brain, which
               gives the "without headset" score.</p>
           </div>
+
+          <div class="card">
+            <h2>Heart rate · watch (optional)</h2>
+            <div class="hs">
+              <div class="hs-status"><span class="hs-dot" id="watch-dot"></span><span id="watch-text">Not connected</span></div>
+              <div class="hs-controls">
+                <input id="watch-name" type="text" placeholder="Watch name (optional), e.g. Forerunner" autocomplete="off">
+                <button id="watch-connect" class="primary">Connect watch</button>
+                <button id="watch-disconnect">Disconnect</button>
+              </div>
+            </div>
+            <dl class="stats">
+              <dt>Heart rate</dt><dd id="watch-bpm">—</dd>
+              <dt>Variability (RMSSD)</dt><dd id="watch-hrv">—</dd>
+              <dt>Used for scoring</dt><dd id="watch-used">—</dd>
+            </dl>
+            <p class="hint">More reliable than the headset's forehead sensor. On the Garmin, start <b>Broadcast Heart
+              Rate</b> (controls menu, or Settings › Sensors › Wrist heart rate, depending on the model), then click
+              Connect. Older Garmins broadcast over ANT+ only and cannot connect here. Any Bluetooth heart rate strap
+              (Polar H10…) also works, and gives the best variability data.</p>
+          </div>
         </div>
       </div>
 

@@ -46,6 +46,7 @@ sys.path.insert(0, str(ROOT))
 from clutch.learned import (ALL_FEATURES, BASELINE_S, EEG_CHANNELS, FEATURE_SETS, SMOOTH_S,  # noqa: E402
                             baseline_of, row_features, window_mean)
 from clutch.processing import eeg_features, heart_rate, motion_level  # noqa: E402
+from clutch.watch import MAX_AGE_S, RMSSD_WINDOW_S, rmssd_of  # noqa: E402
 
 FS = {"eeg": 256, "ppg": 64, "accel": 52}  # Muse 2
 WINDOW_S = {"eeg": 4.0, "ppg": 10.0, "accel": 2.0}
@@ -80,6 +81,7 @@ def session_rows(sdir: Path, notch_hz: float):
     tp, ppg, _ = load_raw(sdir / "raw_ppg.csv")
     ta, acc, _ = load_raw(sdir / "raw_accel.csv")
     face = pd.read_csv(sdir / "face.csv") if (sdir / "face.csv").exists() else None
+    watch = pd.read_csv(sdir / "raw_hr.csv") if (sdir / "raw_hr.csv").exists() else None  # Garmin / BLE strap
     keep = [i for i, n in enumerate(eeg_names) if n in EEG_CHANNELS]
     rows = []
     for k, ph in enumerate(phases):
@@ -89,6 +91,12 @@ def session_rows(sdir: Path, notch_hz: float):
             feats = eeg_features(w[keep], FS["eeg"], [eeg_names[i] for i in keep], notch_hz) if w is not None else {}
             w = window(tp, ppg, tt, WINDOW_S["ppg"], FS["ppg"])
             hr = heart_rate(w, FS["ppg"]) if w is not None else {}
+            if watch is not None:  # same rule as the live engine: the watch replaces the Muse PPG when fresh
+                recent = watch[(watch["t"] <= tt) & (watch["t"] > tt - MAX_AGE_S)]
+                if len(recent):
+                    beats = watch.loc[(watch["t"] <= tt) & (watch["t"] > tt - RMSSD_WINDOW_S), "rr_ms"].dropna()
+                    rr = [float(x) for v in beats for x in str(v).split()]
+                    hr = {"bpm": float(recent["bpm"].iloc[-1]), "quality": 1.0, "rmssd": rmssd_of(rr)}
             w = window(ta, acc, tt, WINDOW_S["accel"], FS["accel"])
             motion = motion_level(w) if w is not None else {}
             f = None
