@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clutch · Live demo</title>
+  <meta name="description" content="An EEG headband calibrates, in 9 minutes, a personal stress model on your heart rate and face. A real recording, replayed live in your browser.">
+  <meta property="og:title" content="Clutch · your brain teaches your watch what stress looks like">
+  <meta property="og:description" content="Muse 2 EEG + Garmin + webcam. A real recording, replayed second by second through the app's own code.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Pixelify+Sans:wght@500;600&display=swap">
+  <link rel="stylesheet" href="demo.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top">
+      <svg class="logo" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><rect x="7" y="2" width="4" height="1" fill="#c8453b"/><rect x="6" y="3" width="6" height="1" fill="#c8453b"/><rect x="6" y="4" width="6" height="1" fill="#f7ecd2"/><rect x="6" y="5" width="1" height="1" fill="#f7ecd2"/><rect x="7" y="5" width="1" height="1" fill="#8ccbdc"/><rect x="8" y="5" width="2" height="1" fill="#f7ecd2"/><rect x="10" y="5" width="1" height="1" fill="#8ccbdc"/><rect x="11" y="5" width="1" height="1" fill="#f7ecd2"/><rect x="2" y="6" width="1" height="1" fill="#ffd86b"/><rect x="6" y="6" width="6" height="1" fill="#f7ecd2"/><rect x="2" y="7" width="1" height="1" fill="#8a6a2a"/><rect x="6" y="7" width="6" height="1" fill="#f7ecd2"/><rect x="1" y="8" width="14" height="1" fill="#d29250"/><rect x="2" y="9" width="12" height="1" fill="#bd7b3d"/><rect x="3" y="10" width="10" height="1" fill="#8d5a2b"/><rect x="0" y="11" width="2" height="1" fill="#6fcbc9"/><rect x="2" y="11" width="2" height="1" fill="#38a0b2"/><rect x="4" y="11" width="3" height="1" fill="#6fcbc9"/><rect x="7" y="11" width="3" height="1" fill="#38a0b2"/><rect x="10" y="11" width="3" height="1" fill="#6fcbc9"/><rect x="13" y="11" width="2" height="1" fill="#38a0b2"/><rect x="15" y="11" width="1" height="1" fill="#6fcbc9"/><rect x="0" y="12" width="16" height="1" fill="#38a0b2"/><rect x="0" y="13" width="1" height="1" fill="#2a859e"/><rect x="1" y="13" width="4" height="1" fill="#38a0b2"/><rect x="5" y="13" width="2" height="1" fill="#2a859e"/><rect x="7" y="13" width="5" height="1" fill="#38a0b2"/><rect x="12" y="13" width="2" height="1" fill="#2a859e"/><rect x="14" y="13" width="2" height="1" fill="#38a0b2"/><rect x="0" y="14" width="16" height="1" fill="#2a859e"/></svg>
+      Clutch <span class="tag">live demo</span>
+    </a>
+    <a class="gh" href="https://github.com/RishiL381/nuero-Cousins" target="_blank" rel="noopener">Code on GitHub</a>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <p class="eyebrow">Neurotech hackathon project · October 2026</p>
+      <h1>Your brain teaches your watch and webcam what stress looks like.</h1>
+      <p class="lead">An EEG headband (Muse 2) is precise but nobody wears one all day. Clutch uses it once: in a
+        9-minute calibration, your brain trains a personal model on your <b>heart rate</b> and <b>face</b>. After that,
+        a watch and a webcam are enough. Below, a real 19-minute recording is replayed second by second through the
+        app's own code.</p>
+    </section>
+
+    <section class="card player" aria-label="Replay controls">
+      <div class="player-row">
+        <button id="play" class="primary" aria-label="Pause">❚❚ Pause</button>
+        <div class="speeds" role="group" aria-label="Replay speed">
+          <button data-speed="1">1×</button><button data-speed="5" class="on">5×</button><button data-speed="20">20×</button>
+        </div>
+        <span class="clock" id="clock">0:00</span>
+        <span class="phase-pill" id="phase-pill">Calibration · rest</span>
+      </div>
+      <div class="timeline" id="timeline" role="slider" aria-label="Position in the recording" tabindex="0">
+        <div class="segments" id="segments"></div>
+        <div class="playhead" id="playhead"></div>
+      </div>
+      <div class="timeline-legend">
+        <span><i class="sw calm"></i>calm phases</span><span><i class="sw stress"></i>stress phases</span>
+        <span class="split-note" id="split-note">◀ calibration: the models learn here · after: data they never saw ▶</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card" aria-labelledby="h-sensors">
+        <h2 id="h-sensors">Sensors</h2>
+        <div class="sensors">
+          <svg viewBox="0 0 120 135" class="head" aria-label="Muse electrodes, top view">
+            <path class="skull" d="M60 12 l-7 9 h14 z"/>
+            <ellipse class="skull" cx="11" cy="74" rx="6" ry="12"/><ellipse class="skull" cx="109" cy="74" rx="6" ry="12"/>
+            <ellipse class="skull" cx="60" cy="72" rx="46" ry="54"/>
+            <g id="dots"></g>
+          </svg>
+          <table class="bands" id="bands" aria-label="Band power per sensor, change from rest"></table>
+        </div>
+        <p class="note">Band power per electrode, as a change from this person's rest. Bands are tuned to their alpha
+          frequency. <span class="dot-key"><i class="good"></i>clean <i class="muscle"></i>muscle tension, ignored
+          <i class="bad"></i>no contact, ignored</span></p>
+        <div class="body-row">
+          <div class="hr"><span>Heart rate</span><b id="hr">—</b></div>
+          <div class="face" id="face" aria-label="Face indicators from the webcam"></div>
+        </div>
+        <p class="note">Face: 7 numbers per second from MediaPipe, computed in the browser. No image is ever stored.</p>
+      </section>
+
+      <section class="card" aria-labelledby="h-live">
+        <h2 id="h-live">Live stress</h2>
+        <div class="gauge" id="gauge"></div>
+        <div class="duo">
+          <div class="duo-item"><span><i class="ln brain"></i>Brain (EEG)</span><b id="v-brain">—</b><small>the teacher</small></div>
+          <div class="duo-item"><span><i class="ln body"></i>Heart + face</span><b id="v-body">—</b><small>the student</small></div>
+        </div>
+        <canvas id="chart" class="chart" aria-label="Brain and heart + face scores, last two minutes"></canvas>
+        <div class="legend"><span><i class="ln brain"></i>Brain: the teacher</span><span><i class="ln body"></i>Heart + face: the student</span></div>
+        <p class="note">0 = this person's calm, 100 = their stress test. The student was trained to follow the teacher
+          during the calibration only.</p>
+      </section>
+
+      <section class="card sea-card" aria-labelledby="h-sea">
+        <h2 id="h-sea">The sea</h2>
+        <canvas id="sea" class="sea" aria-label="Pixel boat, waves follow stress"></canvas>
+        <p class="note">Calm mind, calm water. In the app, the boat also drifts along the bottom of your screen while
+          you work. Pixel art by Rishi.</p>
+      </section>
+
+      <section class="card" aria-labelledby="h-report">
+        <h2 id="h-report">What the calibration learned</h2>
+        <p class="note" id="report-lead"></p>
+        <table class="brain-table" id="brain-table" aria-label="Brain signals per sensor and band"></table>
+        <h3>The student: weights on heart + face</h3>
+        <div id="weights" class="weights"></div>
+      </section>
+    </div>
+
+    <section class="card results" aria-labelledby="h-results">
+      <h2 id="h-results">Does it work?</h2>
+      <div class="results-grid">
+        <div>
+          <h3>Per person, on data the models never saw</h3>
+          <p class="note">After the calibration: relaxation vs hard math and colour words. AUC: 0.5 is a coin flip, 1.0 is perfect.</p>
+          <div id="per-person" class="bars"></div>
+        </div>
+        <div>
+          <h3>One shared model, tested on a person it never saw</h3>
+          <p class="note" id="shared-lead"></p>
+          <div id="shared" class="bars"></div>
+        </div>
+      </div>
+      <p class="takeaway"><b>The takeaway:</b> brain signals generalise across people. Heart and face only work once
+        they are calibrated on the person, and the headset is what calibrates them.</p>
+    </section>
+
+    <section class="how" aria-labelledby="h-how">
+      <h2 id="h-how">How it works</h2>
+      <ol>
+        <li><b>Calibrate, 9 minutes.</b> Rest, a timed mental-math stress test, recovery. Muse 2 EEG, a Garmin watch
+          and the webcam record together.</li>
+        <li><b>The teacher.</b> On each electrode, theta, alpha and beta power in bands tuned to your alpha frequency.
+          Windows with bad contact, head movement or muscle tension are dropped. The signals that change under stress
+          are kept, in whichever direction they move for you.</li>
+        <li><b>The student.</b> A small linear model learns the weights that make your heart rate and facial tension
+          reproduce the teacher's curve, second by second.</li>
+        <li><b>Take the headset off.</b> The watch and webcam carry on alone.</li>
+      </ol>
+      <p class="note">A pilot: 2 people, 4 sessions, about 34 minutes of labelled data, always tested on unseen data
+        or an unseen person. A wellness prototype, not a medical device. The recording shown is a team member's, shared
+        with consent.</p>
+    </section>
+  </main>
+
+  <footer>Built in a weekend by Clément, Riley and Rishi · Python, scikit-learn, MediaPipe, muse-lsl ·
+    <a href="https://github.com/RishiL381/nuero-Cousins" target="_blank" rel="noopener">source</a></footer>
+
+  <script src="pixel-sea.js"></script>
+  <script src="demo.js"></script>
+</body>
+</html>

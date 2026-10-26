@@ -4,20 +4,55 @@
     {
       "name": "clutch-mock",
       "runtimeExecutable": ".venv\\Scripts\\python.exe",
-      "runtimeArgs": ["-m", "clutch", "--source", "mock", "--port", "8001"],
+      "runtimeArgs": [
+        "-m",
+        "clutch",
+        "--source",
+        "mock",
+        "--port",
+        "8001"
+      ],
       "port": 8001
     },
     {
       "name": "clutch-mock-mac",
       "runtimeExecutable": "/Users/riley/Desktop/nuero-Cousins/.venv/bin/python3",
-      "runtimeArgs": ["-m", "clutch", "--source", "mock", "--port", "8001"],
+      "runtimeArgs": [
+        "-m",
+        "clutch",
+        "--source",
+        "mock",
+        "--port",
+        "8001"
+      ],
       "port": 8001
     },
     {
       "name": "clutch-muse",
       "runtimeExecutable": ".venv\\Scripts\\python.exe",
-      "runtimeArgs": ["-m", "clutch", "--source", "muselsl", "--name", "Muse-3724", "--port", "8000"],
+      "runtimeArgs": [
+        "-m",
+        "clutch",
+        "--source",
+        "muselsl",
+        "--name",
+        "Muse-3724",
+        "--port",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "clutch-demo",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8002",
+        "--directory",
+        "demo"
+      ],
+      "port": 8002
     }
   ]
 }

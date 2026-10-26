@@ -5,6 +5,8 @@ reset brings stress down, and a second round shows the effect on performance.
 
 **How the app works, step by step:** [docs/site-guide.md](docs/site-guide.md).
 
+**Live demo without hardware:** [demo/](demo/README.md), a real recording replayed in the browser.
+
 ## Quick start (Windows)
 
 ```bash
